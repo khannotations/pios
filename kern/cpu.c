@@ -39,6 +39,15 @@ cpu cpu_boot = {
 		// 0x10 - kernel data segment
 		[CPU_GDT_KDATA >> 3] = SEGDESC32(1, STA_W, 0x0,
 					0xffffffff, 0),
+
+		// 0x18 - user code segment
+		[CPU_GDT_UCODE >> 3] = SEGDESC32(1, STA_X | STA_R, 0x0,
+					0xffffffff, 3),
+
+		// 0x20 - user data segment
+		[CPU_GDT_UDATA >> 3] = SEGDESC32(1, STA_W, 0x0,
+					0xffffffff, 3),
+        
 	},
 
 	magic: CPU_MAGIC
