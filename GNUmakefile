@@ -56,7 +56,7 @@ NETPORT := $(shell expr `id -u` % 5000 + 30000)
 # QEMUPORT := -s -p $(GDBPORT)
 QEMUPORT := -gdb tcp::$(GDBPORT)
 
-CC	:= $(GCCPREFIX)gcc -pipe
+CC	:= $(GCCPREFIX)gcc-3.3 -pipe
 AS	:= $(GCCPREFIX)as
 AR	:= $(GCCPREFIX)ar
 LD	:= $(GCCPREFIX)ld

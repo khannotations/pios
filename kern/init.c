@@ -58,6 +58,12 @@ init(void)
 	// Can't call cprintf until after we do this!
 	cons_init();
 
+	// Lab 1: test cprintf and debug_trace
+	cprintf("1234 decimal is %o octal!\n", 1234);
+    	unsigned int i = 0x00646c72;
+    	cprintf("H%x Wo%s", 57616, &i);
+	debug_check();
+
 	// Initialize and load the bootstrap CPU's GDT, TSS, and IDT.
 	cpu_init();
 	trap_init();
