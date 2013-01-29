@@ -33,8 +33,11 @@ static void
 trap_init_idt(void)
 {
 	extern segdesc gdt[];
-	
-	panic("trap_init() not implemented.");
+    extern uint32_t vectors[];	
+        
+    int i;
+    for(i = 0; i <= 32; i++)
+        SETGATE(idt[i], 0, CPU_GDT_KDATA << 3, vectors[i], 0);
 }
 
 void
