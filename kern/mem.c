@@ -84,12 +84,14 @@ mem_init(void)
 	pageinfo **freetail = &mem_freelist;
 	int i;
 	for (i = 0; i < mem_npage; i++) {
-		// A free page has no references to it.
+		if(i != 0 && i != 1) {
+        // A free page has no references to it.
 		mem_pageinfo[i].refcount = 0;
 
 		// Add the page to the end of the free list.
 		*freetail = &mem_pageinfo[i];
 		freetail = &mem_pageinfo[i].free_next;
+        }
 	}
 	*freetail = NULL;	// null-terminate the freelist
 

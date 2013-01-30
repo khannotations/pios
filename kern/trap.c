@@ -38,11 +38,14 @@ static void
 trap_init_idt(void)
 {
 	extern segdesc gdt[];
-    extern uint32_t vectors[];	
+    extern uint32_t handlers[];
         
     int i;
     for(i = 0; i <= 32; i++)
-        SETGATE(idt[i], 0, CPU_GDT_KDATA << 3, vectors[i], 0);
+        SETGATE(idt[i], 0, CPU_GDT_KCODE, handlers[i], 0);
+
+    SETGATE(idt[3], 0, CPU_GDT_KCODE, handlers[3], 3);
+    SETGATE(idt[4], 0, CPU_GDT_KCODE, handlers[4], 3);
 }
 
 void

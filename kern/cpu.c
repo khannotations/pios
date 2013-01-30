@@ -58,11 +58,11 @@ cpu cpu_boot = {
 void cpu_init()
 {
 	cpu *c = cpu_cur();
+    
+    c->tss.ts_esp0 = (uint32_t*)&c->kstackhi;
+	c->tss.ts_ss0 = CPU_GDT_KDATA;
 
-    c->tss.ts_esp0 = (uint32_t)&c->kstackhi;
-    c->tss.ts_ss0 = CPU_GDT_KDATA;
-
-    c->gdt[CPU_GDT_TSS << 3] = SEGDESC16(0, STS_T32A, (uint32_t)&(c->tss), sizeof(struct taskstate)-1, 0);
+	c->gdt[CPU_GDT_TSS >> 3] = SEGDESC16(STS_T32A, (uint32_t)(&(c->tss)), sizeof(struct taskstate), 0);
 
 	// Load the GDT
 	struct pseudodesc gdt_pd = {
@@ -79,8 +79,8 @@ void cpu_init()
 
 	// We don't need an LDT.
 	asm volatile("lldt %%ax" :: "a" (0));
+    ltr(CPU_GDT_TSS);
 
-    ltr(CPU_GDT_TSS << 3);
 }
 
 // Allocate an additional cpu struct representing a non-bootstrap processor.
