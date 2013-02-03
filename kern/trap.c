@@ -38,14 +38,49 @@ static void
 trap_init_idt(void)
 {
 	extern segdesc gdt[];
-    extern uint32_t handlers[];
+    
+    // All the trap handlers.
+    extern char tdivide, 
+                tdebug, 
+                tnmi, 
+                tbrkpt, 
+                toflow,
+                tbound, 
+                tillop, 
+                tdivide, 
+                tdblflt, 
+                ttss, 
+                tsegnp,
+                tstack, 
+                tgpflt, 
+                tpgflt, 
+                tfperr, 
+                talign, 
+                tmchk, 
+                tsimd, 
+                tsecev, 
+                tirq0;
         
-    int i;
-    for(i = 0; i <= 32; i++)
-        SETGATE(idt[i], 0, CPU_GDT_KCODE, handlers[i], 0);
-
-    SETGATE(idt[3], 0, CPU_GDT_KCODE, handlers[3], 3);
-    SETGATE(idt[4], 0, CPU_GDT_KCODE, handlers[4], 3);
+    SETGATE(idt[T_DIVIDE], 0, CPU_GDT_KCODE, &tdivide, 0);
+    SETGATE(idt[T_DEBUG], 0, CPU_GDT_KCODE, &tdebug, 0);
+    SETGATE(idt[T_NMI], 0, CPU_GDT_KCODE, &tnmi, 0);
+    SETGATE(idt[T_BRKPT], 0, CPU_GDT_KCODE, &tbrkpt, 3);
+    SETGATE(idt[T_OFLOW], 0, CPU_GDT_KCODE, &toflow, 3);
+    SETGATE(idt[T_BOUND], 0, CPU_GDT_KCODE, &tbound, 0);
+    SETGATE(idt[T_ILLOP], 0, CPU_GDT_KCODE, &tillop, 0);
+    SETGATE(idt[T_DEVICE], 0, CPU_GDT_KCODE, &tdivide, 0);
+    SETGATE(idt[T_DBLFLT], 0, CPU_GDT_KCODE, &tdblflt, 0);
+    SETGATE(idt[T_TSS], 0, CPU_GDT_KCODE, &ttss, 0);
+    SETGATE(idt[T_SEGNP], 0, CPU_GDT_KCODE, &tsegnp, 0);
+    SETGATE(idt[T_STACK], 0, CPU_GDT_KCODE, &tstack, 0);
+    SETGATE(idt[T_GPFLT], 0, CPU_GDT_KCODE, &tgpflt, 0);
+    SETGATE(idt[T_PGFLT], 0, CPU_GDT_KCODE, &tpgflt, 0);
+    SETGATE(idt[T_FPERR], 0, CPU_GDT_KCODE, &tfperr, 0);
+    SETGATE(idt[T_ALIGN], 0, CPU_GDT_KCODE, &talign, 0);
+    SETGATE(idt[T_MCHK], 0, CPU_GDT_KCODE, &tmchk, 0);
+    SETGATE(idt[T_SIMD], 0, CPU_GDT_KCODE, &tsimd, 0);
+    SETGATE(idt[T_SECEV], 0, CPU_GDT_KCODE, &tsecev, 0);
+    SETGATE(idt[T_IRQ0], 0, CPU_GDT_KCODE, &tirq0, 0);
 }
 
 void

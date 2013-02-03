@@ -94,18 +94,20 @@ init(void)
 	// Lab 1: change this so it enters user() in user mode,
 	// running on the user_stack declared above,
 	// instead of just calling user() directly.
-	trapframe tf;
+    //user();
     
-	tf.tf_esp = (uint32_t*)user_stack;
-	tf.tf_cs = CPU_GDT_UCODE;
-	tf.tf_ds = CPU_GDT_UDATA;
-	tf.tf_es = (tf.tf_ss = tf.ts_ds);
-	tf.tf_eflags = FL_IOPL_3;
-	tf.tf_esp = (uint32_t*)user_stack + PAGESIZE;
-	tf.tf_eip = (uint32_t*)&user;
+    trapframe tf;
+    memset(&tf, 0, sizeof(tf));
+
+	tf.cs = CPU_GDT_UCODE | 3;
+	tf.ds = CPU_GDT_UDATA | 3;
+	tf.es = CPU_GDT_UDATA | 3;
+    tf.ss = CPU_GDT_UDATA | 3;
+	tf.eflags = FL_IOPL_3;
+	tf.esp = (uint32_t) &user_stack[PAGESIZE];
+	tf.eip = (uint32_t) &user;
 
     trap_return(&tf);
-
 }
 
 // This is the first function that gets run in user mode (ring 3).
