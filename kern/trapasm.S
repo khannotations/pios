@@ -41,77 +41,26 @@
 	jmp _alltraps
 
 
-.text
-TRAPHANDLER_NOEC(trap0, 0)
-TRAPHANDLER(trap1, 1)
-TRAPHANDLER_NOEC(trap2, 2)
-TRAPHANDLER_NOEC(trap3, 3)
-TRAPHANDLER_NOEC(trap4, 4)
-TRAPHANDLER_NOEC(trap5, 5)
-TRAPHANDLER_NOEC(trap6, 6)
-TRAPHANDLER_NOEC(trap7, 7)
-TRAPHANDLER(trap8, 8)
-TRAPHANDLER_NOEC(trap9, 9)
-TRAPHANDLER(trap10, 10)
-TRAPHANDLER(trap11, 11)
-TRAPHANDLER(trap12, 12)
-TRAPHANDLER(trap13, 13)
-TRAPHANDLER(trap14, 14)
-TRAPHANDLER_NOEC(trap15, 15)
-TRAPHANDLER(trap16, 16)
-TRAPHANDLER(trap17, 17)
-TRAPHANDLER_NOEC(trap18, 18)
-TRAPHANDLER_NOEC(trap19, 19)
-TRAPHANDLER_NOEC(trap20, 20)
-TRAPHANDLER_NOEC(trap21, 21)
-TRAPHANDLER_NOEC(trap22, 22)
-TRAPHANDLER_NOEC(trap23, 23)
-TRAPHANDLER_NOEC(trap24, 24)
-TRAPHANDLER_NOEC(trap25, 25)
-TRAPHANDLER_NOEC(trap26, 26)
-TRAPHANDLER_NOEC(trap27, 27)
-TRAPHANDLER_NOEC(trap28, 28)
-TRAPHANDLER_NOEC(trap29, 29)
-TRAPHANDLER_NOEC(trap30, 30)
-TRAPHANDLER_NOEC(trap31, 31)
-TRAPHANDLER_NOEC(trap32, 32)
-
-.data
-.globl handlers
-handlers:
-	.long trap0
-	.long trap1
-	.long trap2
-	.long trap3
-	.long trap4
-	.long trap5
-	.long trap6
-	.long trap7
-	.long trap8
-	.long trap9
-	.long trap10
-	.long trap11
-	.long trap12
-	.long trap13
-	.long trap14
-	.long trap15
-	.long trap16
-	.long trap17
-	.long trap18
-	.long trap19
-	.long trap20
-	.long trap21
-	.long trap22
-	.long trap23
-	.long trap24
-	.long trap25
-	.long trap26
-	.long trap27
-	.long trap28
-	.long trap29
-	.long trap30
-	.long trap31
-	.long trap32
+TRAPHANDLER_NOEC(tdivide, T_DIVIDE)
+TRAPHANDLER_NOEC(tdebug, T_DEBUG)
+TRAPHANDLER_NOEC(tnmi, T_NMI)
+TRAPHANDLER_NOEC(tbrkpt, T_BRKPT)
+TRAPHANDLER_NOEC(toflow, T_OFLOW)
+TRAPHANDLER_NOEC(tbound, T_BOUND)
+TRAPHANDLER_NOEC(tillop, T_ILLOP)
+TRAPHANDLER_NOEC(tdevice, T_DEVICE)
+TRAPHANDLER     (tdblflt, T_DBLFLT)
+TRAPHANDLER     (ttss, T_TSS)
+TRAPHANDLER     (tsegnp, T_SEGNP)
+TRAPHANDLER     (tstack, T_STACK)
+TRAPHANDLER     (tgpflt, T_GPFLT)
+TRAPHANDLER     (tpgflt, T_PGFLT)
+TRAPHANDLER_NOEC(tfperr, T_FPERR)
+TRAPHANDLER     (talign, T_ALIGN)
+TRAPHANDLER_NOEC(tmchk, T_MCHK)
+TRAPHANDLER_NOEC(tsimd, T_SIMD)
+TRAPHANDLER_NOEC(tsecev, T_SECEV)
+TRAPHANDLER_NOEC(tirq0, T_IRQ0)
 
 /*
  * Lab 1: Your code here for _alltraps
@@ -129,7 +78,7 @@ _alltraps:
     movw $CPU_GDT_KDATA, %ax
     movw %ax, %ds
     movw %ax, %es
-   
+  
     pushl %esp
     call trap
 
@@ -147,13 +96,13 @@ _alltraps:
 .type	trap_return,@function
 .p2align 4, 0x90		/* 16-byte alignment, nop filled */
 trap_return:
-  addl $0x4, %esp // Point esp to the trapframe *
+  movl	4(%esp),%esp // Point esp to the trapframe *
   popal
   popl %gs
   popl %fs
   popl %es
   popl %ds
-  addl $0x8, %esp 
+  addl $8, %esp 
   iret
 
 1:	jmp	1b		// just spin

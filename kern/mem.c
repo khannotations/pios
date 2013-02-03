@@ -79,22 +79,27 @@ mem_init(void)
 	//     Hint: the linker places the kernel (see start and end above),
 	//     but YOU decide where to place the pageinfo array.
 	// Change the code to reflect this.
+    
+    pageinfo *mem_pageinfo = (pageinfo*)ROUNDUP((uint32_t)end, (uint32_t)sizeof(pageinfo));
 	pageinfo **freetail = &mem_freelist;
 	int i;
 	for (i = 0; i < mem_npage; i++) {
-		if(i != 0 && i != 1) {
-        // A free page has no references to it.
-		mem_pageinfo[i].refcount = 0;
+		if(i != 0 && i != 1) {              // Pages 0 and 1 are reserved.
+            if(i < basemem/4096 ||          // All of base memory otherwise is free
+                i >= (uint32_t)(ROUNDUP(&mem_pageinfo[mem_npage],4096))/4096) {   // After the kernel
+                                                                                // and the pageinfo table
+                                                                                // all memory should be free
+                // A free page has no references to it.
+                mem_pageinfo[i].refcount = 0;
 
-		// Add the page to the end of the free list.
-		*freetail = &mem_pageinfo[i];
-		freetail = &mem_pageinfo[i].free_next;
+                // Add the page to the end of the free list.
+                *freetail = &mem_pageinfo[i];
+                freetail = &mem_pageinfo[i].free_next;
+            }
         }
 	}
 	*freetail = NULL;	// null-terminate the freelist
 
-	// ...and remove this when you're ready.
-	panic("mem_init() not implemented");
 
 	// Check to make sure the page allocator seems to work correctly.
 	mem_check();
@@ -114,9 +119,10 @@ mem_init(void)
 pageinfo *
 mem_alloc(void)
 {
-	// Fill this function in
-	// Fill this function in.
-	panic("mem_alloc not implemented.");
+	pageinfo *p = mem_freelist;
+	if(p != NULL)
+		mem_freelist = p->free_next;	// Remove page from free list
+    return p;
 }
 
 //
@@ -126,8 +132,8 @@ mem_alloc(void)
 void
 mem_free(pageinfo *pi)
 {
-	// Fill this function in.
-	panic("mem_free not implemented.");
+    pi->free_next = mem_freelist;
+    mem_freelist = pi;
 }
 
 //
