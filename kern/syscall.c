@@ -87,6 +87,55 @@ do_cputs(trapframe *tf, uint32_t cmd)
 	trap_return(tf);	// syscall completed
 }
 
+static void
+do_put(trapframe *tf, uint32_t cmd)
+{
+	proc *curr = (cpu_curr())->proc;
+    spinlock_acquire(&curr->lock);
+
+    int child_index = tf->regs.edx;
+    proc *child = curr->child[child_index];
+
+    if(child->state != PROC_STOP)
+		proc_wait(curr, child, tf);
+
+	if(cmd & SYS_REGS)
+		memcpy(&(child->sv), (procstate*)tf->regs.ebx, sizeof(procstate));
+    spinlock_release(&curr->lock);
+
+	if (cmd & SYS_START) {
+		proc_ready(cp);
+        proc_sched();
+    }
+    
+
+	trap_return(tf);	// syscall completed
+}
+
+static void
+do_get(trapframe *tf, uint32_t cmd)
+{ 
+	proc *curr = (cpu_curr())->proc;
+    spinlock_acquire(&curr->lock);
+
+    int child_index = tf->regs.edx;
+    proc *child = curr->child[child_index];
+
+    if(child->state != PROC_STOP)
+		proc_wait(curr, child, tf);
+
+	if(cmd & SYS_REGS)
+		memcpy((procstate*)tf->regs.ebx, &(child->sv), sizeof(procstate));
+
+	trap_return(tf);	// syscall completed
+}
+
+static void
+do_ret(trapframe *tf, uint32_t cmd) {
+    proc *curr = (cpu_curr())->proc;
+    proc_ret(tf);
+}
+
 // Common function to handle all system calls -
 // decode the system call type and call an appropriate handler function.
 // Be sure to handle undefined system calls appropriately.
