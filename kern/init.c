@@ -103,7 +103,10 @@ init(void)
 	tf.esp = (uint32_t) &user_stack[PAGESIZE];
 	tf.eip = (uint32_t) &user;
 
-    trap_return(&tf);
+    proc *initial = proc_alloc(NULL, 0);
+    initial->sv.tf = tf;
+    proc_ready(initial);
+    proc_sched();
 }
 
 // This is the first function that gets run in user mode (ring 3).

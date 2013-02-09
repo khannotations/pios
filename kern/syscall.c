@@ -97,8 +97,10 @@ syscall(trapframe *tf)
 	uint32_t cmd = tf->regs.eax;
 	switch (cmd & SYS_TYPE) {
 	case SYS_CPUTS:	return do_cputs(tf, cmd);
-	// Your implementations of SYS_PUT, SYS_GET, SYS_RET here...
-	default:	return;		// handle as a regular trap
+    case SYS_PUT: return do_put(tf, cmd);
+    case SYS_GET: return do_get(tf, cmd);
+    case SYS_RET: return do_ret(tf, cmd);
+    default:	return;		// handle as a regular trap
 	}
 }
 

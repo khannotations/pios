@@ -26,7 +26,7 @@ size_t mem_npage;		// Total number of physical memory pages
 pageinfo *mem_pageinfo;		// Metadata array indexed by page number
 
 pageinfo *mem_freelist;		// Start of free page list
-
+spinlock _freelist_lock;
 
 void mem_check(void);
 
@@ -80,7 +80,7 @@ mem_init(void)
 	//     Hint: the linker places the kernel (see start and end above),
 	//     but YOU decide where to place the pageinfo array.
 	// Change the code to reflect this.
-    
+    spinlock_init(&_freelist_lock);
     pageinfo *mem_pageinfo = (pageinfo*)ROUNDUP((uint32_t)end, (uint32_t)sizeof(pageinfo));
 	pageinfo **freetail = &mem_freelist;
 	int i;
@@ -120,9 +120,11 @@ mem_init(void)
 pageinfo *
 mem_alloc(void)
 {
+    spinlock_acquire(&_freelist_lock);
 	pageinfo *p = mem_freelist;
 	if(p != NULL)
 		mem_freelist = p->free_next;	// Remove page from free list
+    spinlock_release(&_freelist_lock);
     return p;
 }
 
@@ -133,8 +135,10 @@ mem_alloc(void)
 void
 mem_free(pageinfo *pi)
 {
+    spinlock_acquire(&_freelist_lock);
     pi->free_next = mem_freelist;
     mem_freelist = pi;
+    spinlock_release(&_freelist_lock);
 }
 
 //
