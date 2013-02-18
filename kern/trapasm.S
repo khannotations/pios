@@ -61,6 +61,8 @@ TRAPHANDLER_NOEC(tmchk, T_MCHK)
 TRAPHANDLER_NOEC(tsimd, T_SIMD)
 TRAPHANDLER_NOEC(tsecev, T_SECEV)
 TRAPHANDLER_NOEC(tirq0, T_IRQ0)
+TRAPHANDLER_NOEC(tsystem, T_SYSCALL)
+TRAPHANDLER_NOEC(tltimer, T_LTIMER)
 
 /*
  * Lab 1: Your code here for _alltraps

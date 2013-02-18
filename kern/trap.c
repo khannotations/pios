@@ -16,6 +16,10 @@
 #include <kern/trap.h>
 #include <kern/cons.h>
 #include <kern/init.h>
+#include <kern/proc.h>
+#include <kern/syscall.h>
+
+#include <dev/lapic.h>
 
 
 // Interrupt descriptor table.  Must be built at run time because
@@ -54,7 +58,9 @@ trap_init_idt(void)
                 tmchk, 
                 tsimd, 
                 tsecev, 
-                tirq0;
+                tirq0,
+		        tsystem,
+                tltimer;
         
     SETGATE(idt[T_DIVIDE], 0, CPU_GDT_KCODE, &tdivide, 0);
     SETGATE(idt[T_DEBUG], 0, CPU_GDT_KCODE, &tdebug, 0);
@@ -76,6 +82,8 @@ trap_init_idt(void)
     SETGATE(idt[T_SIMD], 0, CPU_GDT_KCODE, &tsimd, 0);
     SETGATE(idt[T_SECEV], 0, CPU_GDT_KCODE, &tsecev, 0);
     SETGATE(idt[T_IRQ0], 0, CPU_GDT_KCODE, &tirq0, 0);
+    SETGATE(idt[T_SYSCALL], 0, CPU_GDT_KCODE, &tsystem, 3);
+    SETGATE(idt[T_LTIMER], 0, CPU_GDT_KCODE, &tltimer, 0);
 }
 
 void
@@ -121,6 +129,10 @@ const char *trap_name(int trapno)
 
 	if (trapno < sizeof(excnames)/sizeof(excnames[0]))
 		return excnames[trapno];
+	if (trapno == T_SYSCALL)
+		return "System call";
+	if (trapno >= T_IRQ0 && trapno < T_IRQ0 + 16)
+		return "Hardware Interrupt";
 	return "(unknown trap)";
 }
 
@@ -165,6 +177,31 @@ trap(trapframe *tf)
 	if (c->recover)
 		c->recover(tf, c->recoverdata);
 
+	// Lab 2: your trap handling code here!
+    if(tf->trapno == T_SYSCALL)
+        syscall(tf);
+
+    if(tf->trapno == T_LTIMER) {
+        lapic_eoi();
+        //cprintf("Timer Interrupt.\n");
+        if(tf->cs & 3)
+            proc_yield(tf);
+        trap_return(tf);
+    }
+
+    if(tf->trapno == T_IRQ0+IRQ_SPURIOUS) {
+        cprintf("Spurious Interrupt. That's weird.\n");
+        trap_return(tf);
+    }
+
+    if(tf->cs & 3) // USER MODE, reflect to parent
+        proc_ret(tf, -1);
+
+
+	// If we panic while holding the console lock,
+	// release it so we don't get into a recursive panic that way.
+	if (spinlock_holding(&cons_lock))
+		spinlock_release(&cons_lock);
 	trap_print(tf);
 	panic("unhandled trap");
 }
