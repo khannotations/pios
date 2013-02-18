@@ -58,7 +58,9 @@ trap_init_idt(void)
                 tmchk, 
                 tsimd, 
                 tsecev, 
-                tirq0;
+                tirq0,
+		        tsystem,
+                tltimer;
         
     SETGATE(idt[T_DIVIDE], 0, CPU_GDT_KCODE, &tdivide, 0);
     SETGATE(idt[T_DEBUG], 0, CPU_GDT_KCODE, &tdebug, 0);
@@ -81,6 +83,7 @@ trap_init_idt(void)
     SETGATE(idt[T_SECEV], 0, CPU_GDT_KCODE, &tsecev, 0);
     SETGATE(idt[T_IRQ0], 0, CPU_GDT_KCODE, &tirq0, 0);
     SETGATE(idt[T_SYSCALL], 0, CPU_GDT_KCODE, &tsystem, 3);
+    SETGATE(idt[T_LTIMER], 0, CPU_GDT_KCODE, &tltimer, 0);
 }
 
 void
@@ -175,8 +178,25 @@ trap(trapframe *tf)
 		c->recover(tf, c->recoverdata);
 
 	// Lab 2: your trap handling code here!
-    if(tf->trapno = T_SYSCALL)
+    if(tf->trapno == T_SYSCALL)
         syscall(tf);
+
+    if(tf->trapno == T_LTIMER) {
+        lapic_eoi();
+        //cprintf("Timer Interrupt.\n");
+        if(tf->cs & 3)
+            proc_yield(tf);
+        trap_return(tf);
+    }
+
+    if(tf->trapno == T_IRQ0+IRQ_SPURIOUS) {
+        cprintf("Spurious Interrupt. That's weird.\n");
+        trap_return(tf);
+    }
+
+    if(tf->cs & 3) // USER MODE, reflect to parent
+        proc_ret(tf, -1);
+
 
 	// If we panic while holding the console lock,
 	// release it so we don't get into a recursive panic that way.
