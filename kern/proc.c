@@ -34,6 +34,7 @@ proc_init(void)
 		return;
 
     spinlock_init(&_proc_queue_lock);
+    queue_head = NULL;
 }
 
 // Allocate and initialize a new proc as child 'cn' of parent 'p'.
@@ -69,12 +70,17 @@ void
 proc_ready(proc *p)
 {
     spinlock_acquire(&_proc_queue_lock);
-    proc* q = queue_head;
-    while(q->readynext != NULL)
-        q = q->readynext;
     p->state = PROC_READY;
     p->readynext = NULL;
-    q->readynext = p;
+    proc *temp = queue_head;
+    if(!temp) {
+        queue_head = p;
+        spinlock_release(&_proc_queue_lock);
+        return;
+    }
+    while(temp->readynext)
+        temp = temp->readynext;
+    temp->readynext = p;
     spinlock_release(&_proc_queue_lock);
 }
 
@@ -89,6 +95,9 @@ void
 proc_save(proc *p, trapframe *tf, int entry)
 {
     p->sv.tf = *tf;
+    if(entry == 0)
+        p->sv.tf.eip -= 2;   // move back an instruction because the syscall 
+                             // pushes eip of the NEXT instruction on the tf
 }
 
 // Go to sleep waiting for a given child process to finish running.
@@ -97,7 +106,11 @@ proc_save(proc *p, trapframe *tf, int entry)
 void gcc_noreturn
 proc_wait(proc *p, proc *cp, trapframe *tf)
 {
+
     p->state = PROC_WAIT;
+    p->waitchild = cp;
+    proc_save(p, tf, 0);
+    spinlock_release(&p->lock);
     proc_sched();
 }
 
@@ -107,14 +120,18 @@ proc_sched(void)
     spinlock_acquire(&_proc_queue_lock);
     while(!queue_head) {
         spinlock_release(&_proc_queue_lock);
-        pause();
+        while(!queue_head) {
+            sti();
+            pause();
+            cli();
+        }
         spinlock_acquire(&_proc_queue_lock);
     }
 
     proc *to_run = queue_head;
     queue_head = queue_head->readynext;
-    spinlock_release(&_proc_queue_lock);
     spinlock_acquire(&to_run->lock);
+    spinlock_release(&_proc_queue_lock);
     proc_run(to_run);
 }
 
@@ -126,6 +143,7 @@ proc_run(proc *p)
     cpu *curr = cpu_cur();
     curr->proc = p;
     p->runcpu = curr;
+    spinlock_release(&p->lock);
     trap_return(&p->sv.tf);
 }
 
@@ -134,8 +152,9 @@ proc_run(proc *p)
 void gcc_noreturn
 proc_yield(trapframe *tf)
 {
-	proc *curr = (cpu_cur())->proc;
+	proc *curr = proc_cur();
     curr->sv.tf = *tf;
+    proc_save(curr, tf, -1);
     proc_ready(curr);
     proc_sched();
 }
@@ -147,12 +166,16 @@ proc_yield(trapframe *tf)
 void gcc_noreturn
 proc_ret(trapframe *tf, int entry)
 {
-    proc *me = (cpu_cur())->proc;
+    proc *me = proc_cur();
     proc *parent = me->parent;
+    spinlock_acquire(&parent->lock);
     me->state = PROC_STOP;
     proc_save(me, tf, entry);
-    if(parent->waitchild == me)
+    if(parent->waitchild == me) {
+        parent->waitchild = NULL;
         proc_run(parent);
+    }
+    spinlock_release(&parent->lock);
     proc_sched();
 }
 

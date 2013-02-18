@@ -90,24 +90,32 @@ do_cputs(trapframe *tf, uint32_t cmd)
 static void
 do_put(trapframe *tf, uint32_t cmd)
 {
-	proc *curr = (cpu_curr())->proc;
+	proc *curr = proc_cur();
     spinlock_acquire(&curr->lock);
 
-    int child_index = tf->regs.edx;
+    uint32_t child_index = tf->regs.edx;
     proc *child = curr->child[child_index];
+
+    if(!child) 
+        child = proc_alloc(curr, child_index);
 
     if(child->state != PROC_STOP)
 		proc_wait(curr, child, tf);
-
-	if(cmd & SYS_REGS)
-		memcpy(&(child->sv), (procstate*)tf->regs.ebx, sizeof(procstate));
+    
     spinlock_release(&curr->lock);
 
-	if (cmd & SYS_START) {
-		proc_ready(cp);
-        proc_sched();
+	if(cmd & SYS_REGS) {
+		memcpy(&(child->sv), (procstate*)tf->regs.ebx, sizeof(procstate));
+        child->sv.tf.ds = CPU_GDT_UDATA | 3;
+		child->sv.tf.es = CPU_GDT_UDATA | 3;
+		child->sv.tf.cs = CPU_GDT_UCODE | 3;
+		child->sv.tf.ss = CPU_GDT_UDATA | 3;
+		child->sv.tf.eflags &= FL_USER;
+		child->sv.tf.eflags |= FL_IF;
     }
-    
+
+	if(cmd & SYS_START)
+		proc_ready(child);
 
 	trap_return(tf);	// syscall completed
 }
@@ -115,16 +123,22 @@ do_put(trapframe *tf, uint32_t cmd)
 static void
 do_get(trapframe *tf, uint32_t cmd)
 { 
-	proc *curr = (cpu_curr())->proc;
+    proc *curr = proc_cur();
+
     spinlock_acquire(&curr->lock);
 
     int child_index = tf->regs.edx;
     proc *child = curr->child[child_index];
 
+    if(!child)
+        cprintf("No child process %d\n", child_index);
+
     if(child->state != PROC_STOP)
 		proc_wait(curr, child, tf);
 
-	if(cmd & SYS_REGS)
+    spinlock_release(&curr->lock);
+	
+    if(cmd & SYS_REGS)
 		memcpy((procstate*)tf->regs.ebx, &(child->sv), sizeof(procstate));
 
 	trap_return(tf);	// syscall completed
@@ -132,8 +146,7 @@ do_get(trapframe *tf, uint32_t cmd)
 
 static void
 do_ret(trapframe *tf, uint32_t cmd) {
-    proc *curr = (cpu_curr())->proc;
-    proc_ret(tf);
+    proc_ret(tf, 1);
 }
 
 // Common function to handle all system calls -
@@ -146,10 +159,10 @@ syscall(trapframe *tf)
 	uint32_t cmd = tf->regs.eax;
 	switch (cmd & SYS_TYPE) {
 	case SYS_CPUTS:	return do_cputs(tf, cmd);
-    case SYS_PUT: return do_put(tf, cmd);
-    case SYS_GET: return do_get(tf, cmd);
-    case SYS_RET: return do_ret(tf, cmd);
-    default:	return;		// handle as a regular trap
+    	case SYS_PUT: return do_put(tf, cmd);
+    	case SYS_GET: return do_get(tf, cmd);
+    	case SYS_RET: return do_ret(tf, cmd);
+    	default:	return;		// handle as a regular trap
 	}
 }
 
