@@ -33,7 +33,9 @@
 static void gcc_noreturn
 systrap(trapframe *utf, int trapno, int err)
 {
-	panic("systrap() not implemented.");
+    utf->trapno = trapno;
+    utf->err = err;
+    proc_ret(utf, 0);
 }
 
 // Recover from a trap that occurs during a copyin or copyout,
@@ -49,7 +51,10 @@ systrap(trapframe *utf, int trapno, int err)
 static void gcc_noreturn
 sysrecover(trapframe *ktf, void *recoverdata)
 {
-	panic("sysrecover() not implemented.");
+    trapframe *utf = (trapframe*)recoverdata;
+    cpu *c = cpu_cur();
+    c->recover = NULL;
+    systrap(utf, ktf->trapno, ktf->err);
 }
 
 // Check a user virtual address block for validity:
@@ -63,7 +68,9 @@ sysrecover(trapframe *ktf, void *recoverdata)
 //
 static void checkva(trapframe *utf, uint32_t uva, size_t size)
 {
-	panic("checkva() not implemented.");
+    uint32_t end = uva + size;
+    if(uva < VM_USERLO || end > VM_USERHI)
+        systrap(utf, T_PGFLT, 0);
 }
 
 // Copy data to/from user space,
@@ -73,17 +80,24 @@ void usercopy(trapframe *utf, bool copyout,
 			void *kva, uint32_t uva, size_t size)
 {
 	checkva(utf, uva, size);
+    cpu *c = cpu_cur();
+    c->recover = sysrecover;
 
-	// Now do the copy, but recover from page faults.
-	panic("syscall_usercopy() not implemented.");
+    if(copyout)
+        memmove((void*)uva, kva, size);
+    else
+        memmove(kva, (void*)uva, size);
+
+    c->recover = NULL;
 }
 
 static void
 do_cputs(trapframe *tf, uint32_t cmd)
 {
 	// Print the string supplied by the user: pointer in EBX
-	cprintf("%s", (char*)tf->regs.ebx);
-
+    char tmp[CPUTS_MAX];
+    usercopy(tf, 0, tmp, tf->regs.ebx, CPUTS_MAX);
+	cprintf("%s", tmp);
 	trap_return(tf);	// syscall completed
 }
 
@@ -105,7 +119,7 @@ do_put(trapframe *tf, uint32_t cmd)
     spinlock_release(&curr->lock);
 
 	if(cmd & SYS_REGS) {
-		memcpy(&(child->sv), (procstate*)tf->regs.ebx, sizeof(procstate));
+		usercopy(tf, 0, &child->sv, tf->regs.ebx, sizeof(procstate));
         child->sv.tf.ds = CPU_GDT_UDATA | 3;
 		child->sv.tf.es = CPU_GDT_UDATA | 3;
 		child->sv.tf.cs = CPU_GDT_UCODE | 3;
@@ -139,7 +153,7 @@ do_get(trapframe *tf, uint32_t cmd)
     spinlock_release(&curr->lock);
 	
     if(cmd & SYS_REGS)
-		memcpy((procstate*)tf->regs.ebx, &(child->sv), sizeof(procstate));
+		usercopy(tf, 1, &child->sv, tf->regs.ebx, sizeof(procstate));
 
 	trap_return(tf);	// syscall completed
 }

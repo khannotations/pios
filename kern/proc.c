@@ -42,7 +42,7 @@ proc_init(void)
 proc *
 proc_alloc(proc *p, uint32_t cn)
 {
-	pageinfo *pi = mem_alloc();
+    pageinfo *pi = mem_alloc();
 	if (!pi)
 		return NULL;
 	mem_incref(pi);
@@ -58,7 +58,9 @@ proc_alloc(proc *p, uint32_t cn)
 	cp->sv.tf.es = CPU_GDT_UDATA | 3;
 	cp->sv.tf.cs = CPU_GDT_UCODE | 3;
 	cp->sv.tf.ss = CPU_GDT_UDATA | 3;
-
+    
+    cp->pdir = pmap_newpdir();
+	cp->rpdir = pmap_newpdir();
 
 	if (p)
 		p->child[cn] = cp;
@@ -144,6 +146,7 @@ proc_run(proc *p)
     curr->proc = p;
     p->runcpu = curr;
     spinlock_release(&p->lock);
+	lcr3(mem_phys(p->pdir));
     trap_return(&p->sv.tf);
 }
 

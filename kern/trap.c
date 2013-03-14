@@ -182,6 +182,12 @@ trap(trapframe *tf)
     if(tf->trapno == T_SYSCALL)
         syscall(tf);
 
+    if(tf->trapno == T_PGFLT) {
+        cprintf("Page Fault!\n");
+        pmap_pagefault(tf);
+        cprintf("Returned from page fault?\n");
+    }
+
     if(tf->trapno == T_LTIMER) {
         lapic_eoi();
         //cprintf("Timer Interrupt.\n");

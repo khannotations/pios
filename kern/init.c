@@ -110,12 +110,48 @@ init(void)
 */
     if(!cpu_onboot())
         proc_sched();
+    
+    proc_root = proc_alloc(NULL, 0);
+    elfhdr *elf = (elfhdr*)ROOTEXE_START;
 
-    proc *initial = proc_alloc(NULL, 0);
-    initial->sv.tf.eip = (uint32_t)user;
-    initial->sv.tf.esp = (uint32_t)&user_stack[PAGESIZE];
-    initial->sv.tf.eflags |= FL_IF;
-    proc_ready(initial);
+	proghdr *prog = (proghdr*)((void*)elf + elf->e_phoff);
+    uint32_t count = elf->e_phnum;
+    int k;
+	for (k = 0; k < count; k++) {
+        int perms = PTE_P | PTE_U;
+        if(prog->p_flags & ELF_PROG_FLAG_WRITE)
+            perms |= PTE_W | SYS_WRITE | SYS_READ;
+        else
+            perms |= SYS_READ;
+		
+        void *off = (void*)elf + ROUNDDOWN(prog->p_offset, PAGESIZE);
+		uint32_t start = ROUNDDOWN(prog->p_va, PAGESIZE);
+		uint32_t end = ROUNDUP(prog->p_va + prog->p_memsz, PAGESIZE);
+		while(start < end) {
+			pageinfo *p = mem_alloc();
+			if (start < ROUNDDOWN(prog->p_va + prog->p_filesz, PAGESIZE)) // complete page
+				memmove(mem_pi2ptr(p), off, PAGESIZE);
+			else {
+				memset(mem_pi2ptr(p), 0, PAGESIZE);
+                int remainder = (prog->p_va + prog->p_filesz) - start;
+                if(remainder > 0)
+				    memmove(mem_pi2ptr(p), off, remainder);
+			}
+			pmap_insert(proc_root->pdir, p, start, perms);
+            start += PAGESIZE;
+            off += PAGESIZE;
+		}
+        prog++;
+	}
+
+    pageinfo *p = mem_alloc();
+    pte_t *pte = pmap_insert(proc_root->pdir,
+            p, VM_STACKHI - PAGESIZE, PTE_P | PTE_W | PTE_U |
+            SYS_READ | SYS_WRITE);  // Nomimally read-write
+    proc_root->sv.tf.eip = elf->e_entry;
+    proc_root->sv.tf.esp = VM_STACKHI;
+    proc_root->sv.tf.eflags |= FL_IF;
+    proc_ready(proc_root);
     proc_sched();
 }
 
