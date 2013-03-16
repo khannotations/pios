@@ -44,7 +44,6 @@ uint8_t pmap_zero[PAGESIZE] gcc_aligned(PAGESIZE);
 // This function only creates mappings in the kernel part of the address space
 // (addresses outside of the range between VM_USERLO and VM_USERHI).
 // The user part of the address space remains all PTE_ZERO until later.
-//
 void
 pmap_init(void)
 {
@@ -104,7 +103,6 @@ pmap_init(void)
 	if (cpu_onboot())
 		pmap_check();
 }
-
 //
 // Allocate a new page directory, initialized from the bootstrap pdir.
 // Returns the new pdir with a reference count of 1.
@@ -168,6 +166,7 @@ pmap_freeptab(pageinfo *ptabpi)
 // Hint 2: the x86 MMU checks permission bits in both the page directory
 // and the page table, so it's safe to leave some page permissions
 // more permissive than strictly necessary.
+
 pte_t *
 pmap_walk(pde_t *pdir, uint32_t va, bool writing)
 {
@@ -180,20 +179,26 @@ pmap_walk(pde_t *pdir, uint32_t va, bool writing)
         // that it must be copy on write shared, or its actually
         // just not writable. If its shared its refcount must be >
         // than 1
-        if(mem_ptr2pi(tmp) && !(*table & PTE_W)
-                && writing) { 
-            // Ref count decrement bc no longer shared
-            mem_decref(mem_ptr2pi(tmp), pmap_freeptab);
-            pageinfo *p = mem_alloc();
-            pte_t *new = mem_pi2ptr(p);
-            int k;
-            for(k = 0; k < 1024; k++) {
-                new[k] = tmp[k] & ~PTE_W;
-                if(PGADDR(tmp[k]) != PTE_ZERO)
-                    mem_incref(mem_phys2pi(PGADDR(tmp[k])));
+        if(!(*table & PTE_W) && writing) { 
+            // This isnt a shared table, entries should actually be read-only
+            if(mem_ptr2pi(tmp)->refcount == 1) {
+                int ind;
+                for(ind = 0; ind < 1024; ind++)
+                    tmp[ind] = tmp[ind] & ~PTE_W;
+            } else {
+                // Ref count decrement bc no longer shared
+                mem_decref(mem_ptr2pi(tmp), pmap_freeptab);
+                pageinfo *p = mem_alloc();
+                pte_t *new = mem_pi2ptr(p);
+                int k;
+                for(k = 0; k < 1024; k++) {
+                    new[k] = tmp[k] & ~PTE_W;
+                    if(PGADDR(tmp[k]) != PTE_ZERO)
+                        mem_incref(mem_phys2pi(PGADDR(tmp[k])));
+                }
+                mem_incref(p);
+                tmp = new;
             }
-            mem_incref(p);
-            tmp = new;
         }
         *table = (pte_t)tmp | PTE_P | PTE_U | PTE_A | PTE_W;
         return &tmp[PTX(va)];
@@ -244,10 +249,11 @@ pmap_insert(pde_t *pdir, pageinfo *pi, uint32_t va, int perm)
     if(!entry)
         return NULL;
     mem_incref(pi);
-    pmap_remove(pdir, va, PAGESIZE);
+    pmap_remove(pdir, va, 4096);
     *entry = mem_pi2phys(pi) | perm | PTE_P;
     return entry;
 }
+
 
 //
 // Unmap the physical pages starting at user virtual address 'va'
@@ -291,11 +297,11 @@ pmap_remove(pde_t *pdir, uint32_t va, size_t size)
 
         // If we're at the beginning and not at a page-table
         // boundary (PTX(start) != 0) or at the end without
-        // an entire page-table left (start + PTSIZE !< end)
+        // an entire page-table left (start + PTSIZE !<= end)
         // then we have to remove the entries one-by-one
-        pte_t *entry = pmap_walk(pdir, start, 1);
         if(PTX(start) != 0
-                || start + PTSIZE >= end) {
+                || start + PTSIZE > end) {
+            pte_t *entry = pmap_walk(pdir, start, 1);
             while(start < end) {
                 if(PGADDR(*entry) != PTE_ZERO) // Theres a page here!
                     mem_decref(mem_phys2pi(PGADDR(*entry)), mem_free);
@@ -351,49 +357,28 @@ pmap_copy(pde_t *spdir, uint32_t sva, pde_t *dpdir, uint32_t dva,
 	assert(dva >= VM_USERLO && dva < VM_USERHI);
 	assert(size <= VM_USERHI - sva);
 	assert(size <= VM_USERHI - dva);
-/*
-    pde_t *stable = &spdir[PDX(sva)];
-    pde_t *dtable = &dpdir[PDX(dva)];
-    while(sva < sva + size
-            && dva < dva + size) {
-        // remove the page table thats at the destination
-        pmap_remove(dpdir, dva, PTSIZE);
-        *stable = *stable & (!PTE_W);
-        int i = 0;
-        while(i < PTSIZE) {
-            pde_t *sentry = &stable[PTX(sva)];
-            pde_t *dentry = &dtable[PTX(dva)];
-            *dentry = *sentry;
-            i += PAGESIZE;
-            sva += PAGESIZE;
-            dva += PAGESIZE;
-        }
-        stable++;
-        dtable++;
+
+	pmap_inval(spdir, sva, size);
+	pmap_inval(dpdir, dva, size);
+    uint32_t start = sva;
+    uint32_t end = sva + size;
+	pde_t *source = &spdir[PDX(sva)];
+	pde_t *dest = &dpdir[PDX(dva)];
+    for(; start < end; source++, dest++,
+                        start += PTSIZE, dva += PTSIZE) {
+        // Shared means one more reference
+		if(*source != PTE_ZERO)
+			mem_incref(mem_phys2pi(PGADDR(*source)));
+        // Delete the old page table
+		if(*dest & PTE_P)
+			pmap_remove(dpdir, dva, PTSIZE);
+        // share mappings
+		*dest = *source;
+        // Mark both as not writable bc they are now shared
+        *dest &= ~PTE_W;
+        *source &= ~PTE_W;
     }
-*/
-    pmap_inval(spdir, sva, size);
-    pmap_inval(dpdir, dva, size);
-    uint32_t start1 = sva;
-    uint32_t end = start1 + size;
-    uint32_t start2 = dva;
-    while(start1 < end) {
-        pde_t *st = &spdir[PDX(start)];
-        pde_t *dt = &dpdir[PDX(start2)];
-        // Remove destination page table
-        if(*dt & PTE_P)
-            pmap_remove(dpdir, start2, PTSIZE);
-        *dt = *st;
-        // Remove write permissions on both
-        *dt &= ~PTE_W;
-        *st &= ~PTE_W;
-        // Increase ref count on source bc dest now pts to it
-        if(*st != PTE_ZERO)
-            mem_incref(mem_phys2pi(PGADDR(*st)));
-        start1 += PTSIZE;
-        start2 += PTSIZE;
-    }
-    return 1;
+	return 1;
 }
 
 //
