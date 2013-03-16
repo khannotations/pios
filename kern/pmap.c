@@ -447,7 +447,7 @@ pmap_merge(pde_t *rpdir, pde_t *spdir, uint32_t sva,
 	assert(dva >= VM_USERLO && dva < VM_USERHI);
 	assert(size <= VM_USERHI - sva);
 	assert(size <= VM_USERHI - dva);
-
+    panic("shit");
 }
 
 // 
@@ -466,7 +466,7 @@ pmap_setperm(pde_t *pdir, uint32_t va, uint32_t size, int perm)
 	assert(va >= VM_USERLO && va < VM_USERHI);
 	assert(size <= VM_USERHI - va);
 	assert((perm & ~(SYS_RW)) == 0);
-
+    panic("damn");
 }
 
 static uint32_t
