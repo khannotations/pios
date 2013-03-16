@@ -408,11 +408,11 @@ pmap_pagefault(trapframe *tf)
 	if(mem_phys2pi(PGADDR(*entry))->refcount > 1 // shared for copy on write
             || PGADDR(*entry) == PTE_ZERO) {      // we can also copy zero pages!
 		pageinfo *p = mem_alloc();
-		memmove((void*)mem_pi2phys(p), (void*)PGADDR(*entry), PAGESIZE);
 		if(PGADDR(*entry) != PTE_ZERO)
 			mem_decref(mem_phys2pi(PGADDR(*entry)), mem_free);
-		new = mem_pi2phys(p);
 		mem_incref(p);
+		memmove((void*)mem_pi2phys(p), (void*)PGADDR(*entry), PAGESIZE);
+		new = mem_pi2phys(p);
 	}
 	*entry = new | SYS_WRITE // still nominally writable
         | PTE_P | PTE_U     // present and in user space
