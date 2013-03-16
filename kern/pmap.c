@@ -395,29 +395,29 @@ pmap_pagefault(trapframe *tf)
 	uint32_t fva = rcr2();
 	//cprintf("pmap_pagefault fva %x eip %x\n", fva, tf->eip);
 
-    proc *current = proc_cur();
-    // We're taking a page fault, so theres something wrong and the cache is invalid
-    pmap_inval(current->pdir, PGADDR(fva), PAGESIZE);
-
-    pde_t *d = &current->pdir[PDX(fva)];
-    if(!(*d & PTE_P))
+    // Only page faults we need to handle are in user-space
+	if(fva < VM_USERLO || fva >= VM_USERHI)
+		return;
+    proc *curr = proc_cur();
+	pmap_inval(curr->pdir, PGADDR(fva), PAGESIZE); // Invalidate the cache
+    pte_t *entry = pmap_walk(curr->pdir, fva, 1);
+    // The page must be nominally writable
+    if(!(*entry & SYS_WRITE)) 
         return;
-    pte_t *p = pmap_walk(current->pdir, fva, 1);
-    if(!(*p & PTE_P))               // If the page doesnt exist its not legitimate
-        return;
-    if(mem_phys2pi(PGADDR(*p))->refcount > 1
-            || PGADDR(*p) == PTE_ZERO) {    // Also "copy on write" pte-zeros
-        pageinfo *new = mem_alloc();
-        // Copy the page
-        memmove((void*)mem_pi2phys(new), (void*)PGADDR(*p), 4096);
-        // Change refcounts
-        mem_incref(new);
-        if(PGADDR(*p) != PTE_ZERO)
-            mem_decref(mem_phys2pi(PGADDR(*p)), mem_free);
-        *p = mem_pi2phys(new) | SYS_READ | SYS_WRITE
-            | PTE_P | PTE_U | PTE_W | PTE_A | PTE_D;
-    }
-    trap_return(tf); 
+    pte_t new = PGADDR(*entry);
+	if(mem_phys2pi(PGADDR(*entry))->refcount > 1 // shared for copy on write
+            || PGADDR(*entry) == PTE_ZERO) {      // we can also copy zero pages!
+		pageinfo *p = mem_alloc();
+		memmove((void*)mem_pi2phys(p), (void*)PGADDR(*entry), PAGESIZE);
+		if(PGADDR(*entry) != PTE_ZERO)
+			mem_decref(mem_phys2pi(PGADDR(*entry)), mem_free);
+		new = mem_pi2phys(p);
+		mem_incref(p);
+	}
+	*entry = new | SYS_WRITE // still nominally writable
+        | PTE_P | PTE_U     // present and in user space
+        | PTE_W;    // system writable and accessed
+	trap_return(tf);
 }
 
 //
