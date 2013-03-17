@@ -173,37 +173,34 @@ trap(trapframe *tf)
 	// and some versions of GCC rely on DF being clear.
 	asm volatile("cld" ::: "cc");
 
+  // If it's a pagefault, check if it's one to blame on the user,
+  // or this function will call trap_return itself.
+  if(tf->trapno == T_PGFLT)
+    pmap_pagefault(tf);
+
 	// If this trap was anticipated, just use the designated handler.
 	cpu *c = cpu_cur();
 	if (c->recover)
 		c->recover(tf, c->recoverdata);
 
-	// Lab 2: your trap handling code here!
-    if(tf->trapno == T_SYSCALL)
-        syscall(tf);
+  if(tf->trapno == T_SYSCALL)
+      syscall(tf);
 
-    if(tf->trapno == T_PGFLT) {
-        cprintf("Page Fault!\n");
-        pmap_pagefault(tf);
-        cprintf("Returned from page fault?\n");
-    }
+  if(tf->trapno == T_LTIMER) {
+      lapic_eoi();
+      //cprintf("Timer Interrupt.\n");
+      if(tf->cs & 3)
+          proc_yield(tf);
+      trap_return(tf);
+  }
 
-    if(tf->trapno == T_LTIMER) {
-        lapic_eoi();
-        //cprintf("Timer Interrupt.\n");
-        if(tf->cs & 3)
-            proc_yield(tf);
-        trap_return(tf);
-    }
+  if(tf->trapno == T_IRQ0+IRQ_SPURIOUS) {
+      cprintf("Spurious Interrupt. That's weird.\n");
+      trap_return(tf);
+  }
 
-    if(tf->trapno == T_IRQ0+IRQ_SPURIOUS) {
-        cprintf("Spurious Interrupt. That's weird.\n");
-        trap_return(tf);
-    }
-
-    if(tf->cs & 3) // USER MODE, reflect to parent
-        proc_ret(tf, -1);
-
+  if(tf->cs & 3) // USER MODE, reflect to parent
+      proc_ret(tf, -1);
 
 	// If we panic while holding the console lock,
 	// release it so we don't get into a recursive panic that way.

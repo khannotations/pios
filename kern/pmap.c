@@ -171,54 +171,53 @@ pte_t *
 pmap_walk(pde_t *pdir, uint32_t va, bool writing)
 {
 	assert(va >= VM_USERLO && va < VM_USERHI);
-    pde_t *table = &pdir[PDX(va)];
-    pte_t *t;
-    if(*table & PTE_P) {        // Is there a table at the index?
-        pte_t *tmp = (pte_t*)PGADDR(*table);
-        // We know if our table is not writable but we are writing
-        // that it must be copy on write shared, or its actually
-        // just not writable. If its shared its refcount must be >
-        // than 1
-        if(!(*table & PTE_W) && writing) { 
-            // This isnt a shared table, entries should actually be read-only
-            if(mem_ptr2pi(tmp)->refcount == 1) {
-                int ind;
-                for(ind = 0; ind < 1024; ind++)
-                    tmp[ind] = tmp[ind] & ~PTE_W;
-            } else {
-                // Ref count decrement bc no longer shared
-                mem_decref(mem_ptr2pi(tmp), pmap_freeptab);
-                pageinfo *p = mem_alloc();
-                pte_t *new = mem_pi2ptr(p);
-                int k;
-                for(k = 0; k < 1024; k++) {
-                    new[k] = tmp[k] & ~PTE_W;
-                    if(PGADDR(tmp[k]) != PTE_ZERO)
-                        mem_incref(mem_phys2pi(PGADDR(tmp[k])));
-                }
-                mem_incref(p);
-                tmp = new;
-            }
+  pde_t *table = &pdir[PDX(va)];
+  pte_t *t;
+  if(*table & PTE_P) {        // Is there a table at the index?
+    pte_t *tmp = (pte_t*)PGADDR(*table);
+    // We know if our table is not writable but we are writing
+    // that it must be copy on write shared, or its actually
+    // just not writable. If its shared its refcount must be >
+    // than 1
+    if(!(*table & PTE_W) && writing) { 
+      // This isnt a shared table, entries should actually be read-only
+      if(mem_ptr2pi(tmp)->refcount == 1) {
+        int ind;
+        for(ind = 0; ind < 1024; ind++)
+            tmp[ind] = tmp[ind] & ~PTE_W;
+      } else {
+        // Ref count decrement bc no longer shared
+        mem_decref(mem_ptr2pi(tmp), pmap_freeptab);
+        pageinfo *p = mem_alloc();
+        pte_t *new = mem_pi2ptr(p);
+        int k;
+        for(k = 0; k < 1024; k++) {
+          new[k] = tmp[k] & ~PTE_W;
+          if(PGADDR(tmp[k]) != PTE_ZERO)
+            mem_incref(mem_phys2pi(PGADDR(tmp[k])));
         }
-        *table = (pte_t)tmp | PTE_P | PTE_U | PTE_A | PTE_W;
-        return &tmp[PTX(va)];
+        mem_incref(p);
+        tmp = new;
+      }
     }
+    *table = (pte_t)tmp | PTE_P | PTE_U | PTE_A | PTE_W;
+    return &tmp[PTX(va)];
+  }
+  if(!writing)
+    return NULL;
 
-    if(!writing)
-        return NULL;
+  // We have to create a new table bc it doesnt exist
+  pageinfo *pi = mem_alloc();
+  if(!pi)
+      return NULL;
+  t = mem_pi2ptr(pi);
+  mem_incref(pi);
+  int i;
+  for(i = 0; i < 1024; i++)
+      t[i] = PTE_ZERO;
+  *table = mem_pi2phys(pi) | PTE_P | PTE_U | PTE_A | PTE_W;
 
-    // We have to create a new table bc it doesnt exist
-    pageinfo *pi = mem_alloc();
-    if(!pi)
-        return NULL;
-    t = mem_pi2ptr(pi);
-    mem_incref(pi);
-    int i;
-    for(i = 0; i < 1024; i++)
-        t[i] = PTE_ZERO;
-    *table = mem_pi2phys(pi) | PTE_P | PTE_U | PTE_A | PTE_W;
-
-    return &t[PTX(va)];
+  return &t[PTX(va)];
 }
 
 //
@@ -246,12 +245,14 @@ pte_t *
 pmap_insert(pde_t *pdir, pageinfo *pi, uint32_t va, int perm)
 {
 	pte_t *entry = pmap_walk(pdir, va, 1);
-    if(!entry)
-        return NULL;
-    mem_incref(pi);
-    pmap_remove(pdir, va, 4096);
-    *entry = mem_pi2phys(pi) | perm | PTE_P;
-    return entry;
+  if(!entry)
+    return NULL;
+  mem_incref(pi);
+  // If entry was a valid entry, remove it
+  if (*entry & PTE_P)
+    pmap_remove(pdir, va, PAGESIZE);
+  *entry = mem_pi2phys(pi) | perm | PTE_P;
+  return entry;
 }
 
 
@@ -282,10 +283,10 @@ pmap_remove(pde_t *pdir, uint32_t va, size_t size)
 	assert(va >= VM_USERLO && va < VM_USERHI);
 	assert(size <= VM_USERHI - va);
 
-    pmap_inval(pdir, va, size);
+  pmap_inval(pdir, va, size);
 
-    uint32_t start = va;
-    uint32_t end = start + size;
+  uint32_t start = va;
+  uint32_t end = start + size;
 
 	while(start < end) {
         // Continue silently if there is no page table at this address
@@ -295,31 +296,31 @@ pmap_remove(pde_t *pdir, uint32_t va, size_t size)
 			continue;
 		}
 
-        // If we're at the beginning and not at a page-table
-        // boundary (PTX(start) != 0) or at the end without
-        // an entire page-table left (start + PTSIZE !<= end)
-        // then we have to remove the entries one-by-one
-        if(PTX(start) != 0
-                || start + PTSIZE > end) {
-            pte_t *entry = pmap_walk(pdir, start, 1);
-            while(start < end) {
-                if(PGADDR(*entry) != PTE_ZERO) // Theres a page here!
-                    mem_decref(mem_phys2pi(PGADDR(*entry)), mem_free);
-                *entry = PTE_ZERO;
-                start += PAGESIZE;
-                *entry++;
-                if(PTX(start) == 0)     // Once we can do page-tables we should
-                    break;
-            }
-            continue;
-        }
+    // If we're at the beginning and not at a page-table
+    // boundary (PTX(start) != 0) or at the end without
+    // an entire page-table left (start + PTSIZE !<= end)
+    // then we have to remove the entries one-by-one
+    if(PTX(start) != 0
+        || start + PTSIZE > end) {
+      pte_t *entry = pmap_walk(pdir, start, 1);
+      while(start < end) {
+        if(PGADDR(*entry) != PTE_ZERO) // Theres a page here!
+            mem_decref(mem_phys2pi(PGADDR(*entry)), mem_free);
+        *entry = PTE_ZERO;
+        start += PAGESIZE;
+        *entry++;
+        if(PTX(start) == 0)     // Once we can do page-tables we should
+          break;
+      }
+      continue;
+    }
 
 		// We can remove an entire table!	
 		if(PGADDR(*table) != PTE_ZERO)
 			mem_decref(mem_phys2pi(PGADDR(*table)), pmap_freeptab);
 		*table = PTE_ZERO;
 		start += PTSIZE;
-    }
+  }
 }
 
 //
@@ -360,24 +361,24 @@ pmap_copy(pde_t *spdir, uint32_t sva, pde_t *dpdir, uint32_t dva,
 
 	pmap_inval(spdir, sva, size);
 	pmap_inval(dpdir, dva, size);
-    uint32_t start = sva;
-    uint32_t end = sva + size;
+  uint32_t start = sva;
+  uint32_t end = sva + size;
 	pde_t *source = &spdir[PDX(sva)];
 	pde_t *dest = &dpdir[PDX(dva)];
-    for(; start < end; source++, dest++,
-                        start += PTSIZE, dva += PTSIZE) {
-        // Shared means one more reference
-		if(*source != PTE_ZERO)
-			mem_incref(mem_phys2pi(PGADDR(*source)));
+  for(; start < end; source++, dest++,
+        start += PTSIZE, dva += PTSIZE) {
+    // Shared means one more reference
+  	if(*source != PTE_ZERO)
+  		mem_incref(mem_phys2pi(PGADDR(*source)));
         // Delete the old page table
-		if(*dest & PTE_P)
-			pmap_remove(dpdir, dva, PTSIZE);
+  	if(*dest & PTE_P)
+  		pmap_remove(dpdir, dva, PTSIZE);
         // share mappings
-		*dest = *source;
-        // Mark both as not writable bc they are now shared
-        *dest &= ~PTE_W;
-        *source &= ~PTE_W;
-    }
+  	*dest = *source;
+    // Mark both as not writable bc they are now shared
+    *dest &= ~PTE_W;
+    *source &= ~PTE_W;
+  }
 	return 1;
 }
 
@@ -391,33 +392,45 @@ pmap_copy(pde_t *spdir, uint32_t sva, pde_t *dpdir, uint32_t dva,
 void
 pmap_pagefault(trapframe *tf)
 {
-	// Read processor's CR2 register to find the faulting linear address.
-	uint32_t fva = rcr2();
-	//cprintf("pmap_pagefault fva %x eip %x\n", fva, tf->eip);
+  // Read processor's CR2 register to find the faulting linear address.
+  uint32_t fva = rcr2();
+  // cprintf("pmap_pagefault fva %x eip %x\n", fva, tf->eip);
 
-    // Only page faults we need to handle are in user-space
-	if(fva < VM_USERLO || fva >= VM_USERHI)
-		return;
-    proc *curr = proc_cur();
-	pmap_inval(curr->pdir, PGADDR(fva), PAGESIZE); // Invalidate the cache
-    pte_t *entry = pmap_walk(curr->pdir, fva, 1);
-    // The page must be nominally writable
-    if(!(*entry & SYS_WRITE)) 
-        return;
-    pte_t new = PGADDR(*entry);
-	if(mem_phys2pi(PGADDR(*entry))->refcount > 1 // shared for copy on write
-            || PGADDR(*entry) == PTE_ZERO) {      // we can also copy zero pages!
-		pageinfo *p = mem_alloc();
-		if(PGADDR(*entry) != PTE_ZERO)
-			mem_decref(mem_phys2pi(PGADDR(*entry)), mem_free);
-		mem_incref(p);
-		memmove((void*)mem_pi2phys(p), (void*)PGADDR(*entry), PAGESIZE);
-		new = mem_pi2phys(p);
-	}
-	*entry = new | SYS_WRITE // still nominally writable
-        | PTE_P | PTE_U     // present and in user space
-        | PTE_W;    // system writable and accessed
-	trap_return(tf);
+  // Only page faults we need to handle are in user-space
+  if(fva < VM_USERLO || fva >= VM_USERHI)
+    return;
+
+  proc *curr = proc_cur();
+  // User is trying to access nonexistant pde
+  if(!(curr->pdir[PDX(fva)] & PTE_P))
+    return;
+  pte_t *pte = pmap_walk(curr->pdir, fva, 1);
+  // User is trying to access nominally unwritable pte
+  if(!(*pte & PTE_P) || !(*pte & SYS_READ) || !(*pte & SYS_WRITE))
+    return;
+
+  // Invalidate region
+  pmap_inval(curr->pdir, PGADDR(fva), PAGESIZE);
+
+  // Get the page
+  uint32_t page = PGADDR(*pte);
+  // If the page is null or has more refs than just us, we need to copy/create
+  if(page == PTE_ZERO || mem_phys2pi(page)->refcount > 1) {
+    pageinfo *new_pi = mem_alloc();
+    // Not really sure what to do if mem_alloc fails...
+    if(!new_pi)
+      return;
+    mem_incref(new_pi);
+    uint32_t new_page = mem_pi2phys(new_pi);
+    memmove((void*)new_page, (void*)page, PAGESIZE);
+    // Make sure to decrement ref on old page
+    if(page != PTE_ZERO)
+      mem_decref(mem_phys2pi(page), mem_free);
+    page = new_page;
+  }
+  // Set nominal read-write, user and actual write
+  *pte = page | SYS_RW | PTE_P | PTE_U | PTE_W;
+  trap_return(tf);
 }
 
 //
@@ -466,7 +479,7 @@ pmap_setperm(pde_t *pdir, uint32_t va, uint32_t size, int perm)
 	assert(va >= VM_USERLO && va < VM_USERHI);
 	assert(size <= VM_USERHI - va);
 	assert((perm & ~(SYS_RW)) == 0);
-    panic("damn");
+  panic("damn");
 }
 
 static uint32_t

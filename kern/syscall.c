@@ -95,8 +95,11 @@ static void
 do_cputs(trapframe *tf, uint32_t cmd)
 {
 	// Print the string supplied by the user: pointer in EBX
-    char tmp[CPUTS_MAX];
-    usercopy(tf, 0, tmp, tf->regs.ebx, CPUTS_MAX);
+  // Add one for null termination
+  char tmp[CPUTS_MAX+1];
+  usercopy(tf, 0, tmp, tf->regs.ebx, CPUTS_MAX);
+  // Make sure it's null terminated (though it may be less than CPUTS_MAX long)
+  tmp[CPUTS_MAX] = 0;
 	cprintf("%s", tmp);
 	trap_return(tf);	// syscall completed
 }
@@ -105,18 +108,18 @@ static void
 do_put(trapframe *tf, uint32_t cmd)
 {
 	proc *curr = proc_cur();
-    spinlock_acquire(&curr->lock);
+  spinlock_acquire(&curr->lock);
 
-    uint32_t child_index = tf->regs.edx;
-    proc *child = curr->child[child_index];
+  uint32_t child_index = tf->regs.edx;
+  proc *child = curr->child[child_index];
 
-    if(!child) 
-        child = proc_alloc(curr, child_index);
+  if(!child) 
+      child = proc_alloc(curr, child_index);
 
-    if(child->state != PROC_STOP)
-		proc_wait(curr, child, tf);
-    
-    spinlock_release(&curr->lock);
+  if(child->state != PROC_STOP)
+	proc_wait(curr, child, tf);
+  
+  spinlock_release(&curr->lock);
 
 	if(cmd & SYS_REGS) {
 		usercopy(tf, 0, &child->sv, tf->regs.ebx, sizeof(procstate));
@@ -126,7 +129,62 @@ do_put(trapframe *tf, uint32_t cmd)
 		child->sv.tf.ss = CPU_GDT_UDATA | 3;
 		child->sv.tf.eflags &= FL_USER;
 		child->sv.tf.eflags |= FL_IF;
-    }
+  }
+  uint32_t source_va = tf->regs.esi; // 1073741824
+  uint32_t dest_va = tf->regs.edi;   // 1073741824
+  uint32_t copy_size = tf->regs.ecx; // 2952790016 
+  switch(cmd & SYS_MEMOP){
+    case 0:
+      // No memop.
+      break;
+    case SYS_COPY:
+      // We need to check:
+      // 1. That source va, dest va and size are page aligned
+      // 2. That the entire region falls between VM_USERLO AND VM_USERHI
+      // cprintf("source: %d, dest: %d, size: %ld\n", source_va, dest_va, copy_size);
+      // cprintf("VM_USERHI: %ld, VM_USERLO: %ld, offsets: %d, %d, %d\n", 
+      //          VM_USERHI, VM_USERLO, PTOFF(source_va), PTOFF(dest_va), PTOFF(copy_size));
+      if(PTOFF(source_va) || PTOFF(dest_va) || PTOFF(copy_size) 
+        || source_va < VM_USERLO || source_va > VM_USERHI
+        || dest_va < VM_USERLO || dest_va > VM_USERHI
+        || source_va + copy_size > VM_USERHI
+        || dest_va + copy_size > VM_USERHI )
+        // Invalid, so issue page fault as per instructions
+        systrap(tf, T_PGFLT, 0);
+      // If all good...
+      pmap_copy(curr->pdir, source_va, child->pdir, dest_va, copy_size);
+      break;
+    case SYS_ZERO:
+      // Here we only need to validate the destination
+      if(PTOFF(dest_va) || PTOFF(copy_size) 
+        || dest_va < VM_USERLO || dest_va > VM_USERHI
+        || dest_va + copy_size > VM_USERHI )
+        // Invalid, so issue page fault as per instructions
+        systrap(tf, T_PGFLT, 0);
+      // All good!
+      pmap_remove(child->pdir, dest_va, copy_size);
+      break;
+    case SYS_MERGE:
+      // Do nothing...only available in GET
+    default:
+      // Invalid MEMOP flag...
+      systrap(tf, T_PGFLT, 0);
+  }
+
+  if(cmd & SYS_PERM) {
+    // Validate destination
+    if(PTOFF(dest_va) || PTOFF(copy_size) 
+        || dest_va < VM_USERLO || dest_va > VM_USERHI
+        || dest_va + copy_size > VM_USERHI )
+      // Invalid, so issue page fault as per instructions
+      systrap(tf, T_PGFLT, 0);
+    // Get the right permission from cmd, since they correspond in SYS_RW
+    pmap_setperm(curr->pdir, dest_va, copy_size, cmd & SYS_RW);
+  }
+
+  if(cmd & SYS_SNAP)
+    // Copy entire user space from child's pdir to rpdir
+    pmap_copy(child->pdir, VM_USERLO, child->rpdir, VM_USERLO, VM_USERHI - VM_USERLO);
 
 	if(cmd & SYS_START)
 		proc_ready(child);
@@ -137,23 +195,83 @@ do_put(trapframe *tf, uint32_t cmd)
 static void
 do_get(trapframe *tf, uint32_t cmd)
 { 
-    proc *curr = proc_cur();
+  proc *curr = proc_cur();
 
-    spinlock_acquire(&curr->lock);
+  spinlock_acquire(&curr->lock);
 
-    int child_index = tf->regs.edx;
-    proc *child = curr->child[child_index];
+  int child_index = tf->regs.edx;
+  proc *child = curr->child[child_index];
 
-    if(!child)
-        cprintf("No child process %d\n", child_index);
+  if(!child)
+      cprintf("No child process %d\n", child_index);
 
-    if(child->state != PROC_STOP)
-		proc_wait(curr, child, tf);
+  if(child->state != PROC_STOP)
+	proc_wait(curr, child, tf);
 
-    spinlock_release(&curr->lock);
-	
-    if(cmd & SYS_REGS)
-		usercopy(tf, 1, &child->sv, tf->regs.ebx, sizeof(procstate));
+  spinlock_release(&curr->lock);
+
+  if(cmd & SYS_REGS)
+	  usercopy(tf, 1, &child->sv, tf->regs.ebx, sizeof(procstate));
+
+  uint32_t source_va = tf->regs.esi;
+  uint32_t dest_va = tf->regs.edi;
+  uint32_t copy_size = tf->regs.ecx;
+  switch(cmd & SYS_MEMOP){
+    case 0:
+      break;
+    case SYS_COPY:
+      // We need to check:
+      // 1. That source va, dest va and size are page aligned
+      // 2. That the entire region falls between VM_USERLO AND VM_USERHI
+      if(PTOFF(source_va) || PTOFF(dest_va) || PTOFF(copy_size) 
+        || source_va < VM_USERLO || source_va > VM_USERHI
+        || dest_va < VM_USERLO || dest_va > VM_USERHI
+        || source_va + copy_size > VM_USERHI
+        || dest_va + copy_size > VM_USERHI )
+        // Invalid, so issue page fault as per instructions
+        systrap(tf, T_PGFLT, 0);
+      // If all good...
+      pmap_copy(curr->pdir, source_va, child->pdir, dest_va, copy_size);
+      break;
+    case SYS_ZERO:
+      // Here we only need to validate the destination
+      if(PTOFF(dest_va) || PTOFF(copy_size) 
+        || dest_va < VM_USERLO || dest_va > VM_USERHI
+        || dest_va + copy_size > VM_USERHI )
+        // Invalid, so issue page fault as per instructions
+        systrap(tf, T_PGFLT, 0);
+      // All good!
+      pmap_remove(child->pdir, dest_va, copy_size);
+      break;
+    case SYS_MERGE:
+      // Validate both
+      if(PTOFF(source_va) || PTOFF(dest_va) || PTOFF(copy_size) 
+        || source_va < VM_USERLO || source_va > VM_USERHI
+        || dest_va < VM_USERLO || dest_va > VM_USERHI
+        || source_va + copy_size > VM_USERHI
+        || dest_va + copy_size > VM_USERHI )
+        // Invalid, so issue page fault as per instructions
+        systrap(tf, T_PGFLT, 0);
+      // Merge
+      pmap_merge(child->rpdir, child->pdir, source_va, curr->pdir, dest_va, copy_size);
+    default:
+      // Invalid MEMOP flag...
+      systrap(tf, T_PGFLT, 0);
+  }
+
+  if(cmd & SYS_PERM) {
+    // Validate destination
+    if(PTOFF(dest_va) || PTOFF(copy_size) 
+        || dest_va < VM_USERLO || dest_va > VM_USERHI
+        || dest_va + copy_size > VM_USERHI )
+      // Invalid, so issue page fault as per instructions
+      systrap(tf, T_PGFLT, 0);
+    // Get the right permission from cmd, since they correspond in SYS_RW
+    pmap_setperm(curr->pdir, dest_va, copy_size, cmd & SYS_RW);
+  }
+
+  if(cmd & SYS_SNAP)
+    systrap(tf, T_PGFLT, 0); // Only available in PUT
 
 	trap_return(tf);	// syscall completed
 }
@@ -172,11 +290,11 @@ syscall(trapframe *tf)
 	// EAX register holds system call command/flags
 	uint32_t cmd = tf->regs.eax;
 	switch (cmd & SYS_TYPE) {
-	case SYS_CPUTS:	return do_cputs(tf, cmd);
-    	case SYS_PUT: return do_put(tf, cmd);
-    	case SYS_GET: return do_get(tf, cmd);
-    	case SYS_RET: return do_ret(tf, cmd);
-    	default:	return;		// handle as a regular trap
+  	case SYS_CPUTS:	return do_cputs(tf, cmd);
+  	case SYS_PUT: return do_put(tf, cmd);
+  	case SYS_GET: return do_get(tf, cmd);
+  	case SYS_RET: return do_ret(tf, cmd);
+  	default:	return;		// handle as a regular trap
 	}
 }
 

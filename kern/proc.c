@@ -141,13 +141,13 @@ proc_sched(void)
 void gcc_noreturn
 proc_run(proc *p)
 {
-    p->state = PROC_RUN;
-    cpu *curr = cpu_cur();
-    curr->proc = p;
-    p->runcpu = curr;
-    spinlock_release(&p->lock);
+  p->state = PROC_RUN;
+  cpu *curr = cpu_cur();
+  curr->proc = p;
+  p->runcpu = curr;
+  spinlock_release(&p->lock);
 	lcr3(mem_phys(p->pdir));
-    trap_return(&p->sv.tf);
+  trap_return(&p->sv.tf);
 }
 
 // Yield the current CPU to another ready process.
