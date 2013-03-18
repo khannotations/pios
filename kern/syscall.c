@@ -19,13 +19,8 @@
 #include <kern/proc.h>
 #include <kern/syscall.h>
 
-
-
-
-
 // This bit mask defines the eflags bits user code is allowed to set.
 #define FL_USER		(FL_CF|FL_PF|FL_AF|FL_ZF|FL_SF|FL_DF|FL_OF)
-
 
 // During a system call, generate a specific processor trap -
 // as if the user code's INT 0x30 instruction had caused it -
@@ -57,10 +52,11 @@ sysrecover(trapframe *ktf, void *recoverdata)
     systrap(utf, ktf->trapno, ktf->err);
 }
 
+
 // Check a user virtual address block for validity:
 // i.e., make sure the complete area specified lies in
 // the user address space between VM_USERLO and VM_USERHI.
-// If not, abort the syscall by sending a T_GPFLT to the parent,
+// If not, abort the syscall by sending a T_PGFLT to the parent,
 // again as if the user program's INT instruction was to blame.
 //
 // Note: Be careful that your arithmetic works correctly
@@ -68,17 +64,17 @@ sysrecover(trapframe *ktf, void *recoverdata)
 //
 static void checkva(trapframe *utf, uint32_t uva, size_t size)
 {
-    uint32_t end = uva + size;
-    if(uva < VM_USERLO || end > VM_USERHI)
+    uint64_t end = uva + size;
+    if(uva < VM_USERLO || uva >= VM_USERHI || end >= VM_USERHI)
         systrap(utf, T_PGFLT, 0);
 }
+
 
 // Copy data to/from user space,
 // using checkva() above to validate the address range
 // and using sysrecover() to recover from any traps during the copy.
 void usercopy(trapframe *utf, bool copyout,
-			void *kva, uint32_t uva, size_t size)
-{
+			void *kva, uint32_t uva, size_t size) {
 	checkva(utf, uva, size);
     cpu *c = cpu_cur();
     c->recover = sysrecover;
@@ -127,12 +123,38 @@ do_put(trapframe *tf, uint32_t cmd)
 		child->sv.tf.eflags &= FL_USER;
 		child->sv.tf.eflags |= FL_IF;
     }
+    
+    uint32_t dest = tf->regs.edi; //syscall.h
+    uint32_t size = tf->regs.ecx;
+    uint32_t src = tf->regs.esi;
+
+    if(cmd & SYS_MEMOP) {
+        int op = cmd & SYS_MEMOP;
+        // Check if the destination range is okay
+        if(dest < VM_USERLO || dest > VM_USERHI || dest + size > VM_USERHI)
+            systrap(tf, T_GPFLT, 0);
+        if(op == SYS_COPY) {
+            // we have to check the source too
+            if(src < VM_USERLO || src > VM_USERHI || src + size > VM_USERHI)
+                systrap(tf, T_GPFLT, 0);
+            pmap_copy(curr->pdir, src, child->pdir, dest, size);
+        } else
+            pmap_remove(child->pdir, dest, size);
+    }
+
+	if(cmd & SYS_PERM)
+		pmap_setperm(child->pdir, dest, size, cmd & SYS_RW);
+
+	if(cmd & SYS_SNAP)
+        // copy pdir to rpdir
+        pmap_copy(child->pdir, VM_USERLO, child->rpdir, VM_USERLO, VM_USERHI-VM_USERLO);
 
 	if(cmd & SYS_START)
 		proc_ready(child);
 
 	trap_return(tf);	// syscall completed
 }
+
 
 static void
 do_get(trapframe *tf, uint32_t cmd)
@@ -151,7 +173,30 @@ do_get(trapframe *tf, uint32_t cmd)
 		proc_wait(curr, child, tf);
 
     spinlock_release(&curr->lock);
-	
+
+    uint32_t dest = tf->regs.edi; //syscall.h
+    uint32_t size = tf->regs.ecx;
+    uint32_t src = tf->regs.esi;
+
+    if(cmd & SYS_MEMOP) {
+        int op = cmd & SYS_MEMOP;
+        // Check if the destination range is okay
+        if(dest < VM_USERLO || dest > VM_USERHI || dest + size > VM_USERHI)
+            systrap(tf, T_GPFLT, 0);
+        if(op == SYS_COPY) {
+            // we have to check the source too
+            if(src < VM_USERLO || src > VM_USERHI || src + size > VM_USERHI)
+                systrap(tf, T_GPFLT, 0);
+            pmap_copy(child->pdir, src, curr->pdir, dest, size);
+        } else if(op == SYS_MERGE) {
+            pmap_merge(child->rpdir, child->pdir, src, curr->pdir, dest, size);
+        } else
+            pmap_remove(curr->pdir, dest, size);
+    }
+
+	if(cmd & SYS_PERM)
+		pmap_setperm(curr->pdir, dest, size, cmd & SYS_RW);
+
     if(cmd & SYS_REGS)
 		usercopy(tf, 1, &child->sv, tf->regs.ebx, sizeof(procstate));
 
