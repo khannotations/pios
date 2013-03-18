@@ -204,25 +204,20 @@ forkcheck()
 void
 protcheck()
 {
-	cprintf("protcheck start\n");
 	// Copyin/copyout protection:
 	// make sure we can't use cputs/put/get data in kernel space
-	cprintf("protcheck: cputs tests 1\n");
 	cputsfaulttest(0);
 	cputsfaulttest(VM_USERLO-1);
 	cputsfaulttest(VM_USERHI);
 	// cputsfaulttest(~0);
-	cprintf("protcheck: put tests 1\n");
 	putfaulttest(0);
 	putfaulttest(VM_USERLO-1);
 	putfaulttest(VM_USERHI);
 	// putfaulttest(~0);
-	cprintf("protcheck: get tests\n");
 	getfaulttest(0);
 	getfaulttest(VM_USERLO-1);
 	getfaulttest(VM_USERHI);
 	// getfaulttest(~0);
-	cprintf("protcheck: before warns\n");
 warn("here");
 	// Check that unused parts of user space are also inaccessible
 	readfaulttest(VM_USERLO+PTSIZE);
@@ -264,7 +259,6 @@ void
 memopcheck(void)
 {
 	// Test page permission changes
-	cprintf("memopcheck: start\n");
 	void *va = (void*)VM_USERLO+PTSIZE+PAGESIZE;
 	readfaulttest(va);
 	sys_get(SYS_PERM | SYS_READ, 0, NULL, NULL, va, PAGESIZE);
@@ -279,7 +273,6 @@ memopcheck(void)
 	writefaulttest(va);				// but not writable
 	sys_get(SYS_PERM | SYS_READ | SYS_WRITE, 0, NULL, NULL, va, PAGESIZE);
 	
-	cprintf("memopcheck: part 2\n");
 	// Test SYS_ZERO with SYS_GET
 	va = (void*)VM_USERLO+PTSIZE;	// 4MB-aligned
 	sys_get(SYS_ZERO, 0, NULL, NULL, va, PTSIZE);
