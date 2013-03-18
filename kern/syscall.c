@@ -65,7 +65,9 @@ sysrecover(trapframe *ktf, void *recoverdata)
 static void checkva(trapframe *utf, uint32_t uva, size_t size)
 {
   uint32_t end = uva + size;
-  if(uva < VM_USERLO || end > VM_USERHI)
+  // Need to check if uva > VM_USERHI because end might wrap
+  // around (if uva = 0xfffffff for example)
+  if(uva < VM_USERLO || uva > VM_USERHI || end > VM_USERHI)
     systrap(utf, T_PGFLT, 0);
 }
 
@@ -76,15 +78,15 @@ static void checkva(trapframe *utf, uint32_t uva, size_t size)
 void usercopy(trapframe *utf, bool copyout,
 			void *kva, uint32_t uva, size_t size) {
 	checkva(utf, uva, size);
-    cpu *c = cpu_cur();
-    c->recover = sysrecover;
+  cpu *c = cpu_cur();
+  c->recover = sysrecover;
 
-    if(copyout)
-        memmove((void*)uva, kva, size);
-    else
-        memmove(kva, (void*)uva, size);
+  if(copyout)
+      memmove((void*)uva, kva, size);
+  else
+      memmove(kva, (void*)uva, size);
 
-    c->recover = NULL;
+  c->recover = NULL;
 }
 
 static void
@@ -92,10 +94,10 @@ do_cputs(trapframe *tf, uint32_t cmd)
 {
 	// Print the string supplied by the user: pointer in EBX
   // Add one for null termination
-  char tmp[CPUTS_MAX+1];
+  char tmp[CPUTS_MAX];
   usercopy(tf, 0, tmp, tf->regs.ebx, CPUTS_MAX);
   // Make sure it's null terminated (though it may be less than CPUTS_MAX long)
-  tmp[CPUTS_MAX] = 0;
+  //tmp[CPUTS_MAX] = 0;
 	cprintf("%s", tmp);
 	trap_return(tf);	// syscall completed
 }
@@ -110,47 +112,45 @@ do_put(trapframe *tf, uint32_t cmd)
   proc *child = curr->child[child_index];
 
   if(!child) 
-      child = proc_alloc(curr, child_index);
-
+    child = proc_alloc(curr, child_index);
   if(child->state != PROC_STOP)
-	proc_wait(curr, child, tf);
+    proc_wait(curr, child, tf);
   
   spinlock_release(&curr->lock);
 
 	if(cmd & SYS_REGS) {
 		usercopy(tf, 0, &child->sv, tf->regs.ebx, sizeof(procstate));
-        child->sv.tf.ds = CPU_GDT_UDATA | 3;
+    child->sv.tf.ds = CPU_GDT_UDATA | 3;
 		child->sv.tf.es = CPU_GDT_UDATA | 3;
 		child->sv.tf.cs = CPU_GDT_UCODE | 3;
 		child->sv.tf.ss = CPU_GDT_UDATA | 3;
 		child->sv.tf.eflags &= FL_USER;
 		child->sv.tf.eflags |= FL_IF;
   }
-    
-    uint32_t dest = tf->regs.edi; //syscall.h
-    uint32_t size = tf->regs.ecx;
-    uint32_t src = tf->regs.esi;
+  uint32_t dest = tf->regs.edi; //syscall.h
+  uint32_t size = tf->regs.ecx;
+  uint32_t src = tf->regs.esi;
 
-    if(cmd & SYS_MEMOP) {
-        int op = cmd & SYS_MEMOP;
-        // Check if the destination range is okay
-        if(dest < VM_USERLO || dest > VM_USERHI || dest + size > VM_USERHI)
-            systrap(tf, T_GPFLT, 0);
-        if(op == SYS_COPY) {
-            // we have to check the source too
-            if(src < VM_USERLO || src > VM_USERHI || src + size > VM_USERHI)
-                systrap(tf, T_GPFLT, 0);
-            pmap_copy(curr->pdir, src, child->pdir, dest, size);
-        } else
-            pmap_remove(child->pdir, dest, size);
-    }
+  if(cmd & SYS_MEMOP) {
+    int op = cmd & SYS_MEMOP;
+    // Check if the destination range is okay
+    if(dest < VM_USERLO || dest > VM_USERHI || dest + size > VM_USERHI)
+        systrap(tf, T_GPFLT, 0);
+    if(op == SYS_COPY) {
+      // we have to check the source too
+      if(src < VM_USERLO || src > VM_USERHI || src + size > VM_USERHI)
+          systrap(tf, T_GPFLT, 0);
+      pmap_copy(curr->pdir, src, child->pdir, dest, size);
+    } else
+      pmap_remove(child->pdir, dest, size);
+  }
 
 	if(cmd & SYS_PERM)
 		pmap_setperm(child->pdir, dest, size, cmd & SYS_RW);
 
 	if(cmd & SYS_SNAP)
-        // copy pdir to rpdir
-        pmap_copy(child->pdir, VM_USERLO, child->rpdir, VM_USERLO, VM_USERHI-VM_USERLO);
+    // copy pdir to rpdir
+    pmap_copy(child->pdir, VM_USERLO, child->rpdir, VM_USERLO, VM_USERHI-VM_USERLO);
 
 	if(cmd & SYS_START)
 		proc_ready(child);

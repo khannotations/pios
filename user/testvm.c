@@ -209,15 +209,15 @@ protcheck()
 	cputsfaulttest(0);
 	cputsfaulttest(VM_USERLO-1);
 	cputsfaulttest(VM_USERHI);
-	// cputsfaulttest(~0);
+	cputsfaulttest(~0);
 	putfaulttest(0);
 	putfaulttest(VM_USERLO-1);
 	putfaulttest(VM_USERHI);
-	// putfaulttest(~0);
+	putfaulttest(~0);
 	getfaulttest(0);
 	getfaulttest(VM_USERLO-1);
 	getfaulttest(VM_USERHI);
-	// getfaulttest(~0);
+	getfaulttest(~0);
 warn("here");
 	// Check that unused parts of user space are also inaccessible
 	readfaulttest(VM_USERLO+PTSIZE);
