@@ -30,11 +30,9 @@ pde_t pmap_bootpdir[1024] gcc_aligned(PAGESIZE);
 // Statically allocated page that we always keep set to all zeros.
 uint8_t pmap_zero[PAGESIZE] gcc_aligned(PAGESIZE);
 
-
 // --------------------------------------------------------------
 // Set up initial memory mappings and turn on MMU.
 // --------------------------------------------------------------
-
 
 
 // Set up a two-level page table:
@@ -391,33 +389,33 @@ pmap_copy(pde_t *spdir, uint32_t sva, pde_t *dpdir, uint32_t dva,
 void
 pmap_pagefault(trapframe *tf)
 {
-	// Read processor's CR2 register to find the faulting linear address.
-	uint32_t fva = rcr2();
-	//cprintf("pmap_pagefault fva %x eip %x\n", fva, tf->eip);
+        // Read processor's CR2 register to find the faulting linear address.
+        uint32_t fva = rcr2();
+        //cprintf("pmap_pagefault fva %x eip %x\n", fva, tf->eip);
 
-    // Only page faults we need to handle are in user-space
-	if(fva < VM_USERLO || fva >= VM_USERHI)
-		return;
+    // one of the tests tries to page fault outside of user space
+    if(fva < VM_USERLO || fva >= VM_USERHI)
+            return;
     proc *curr = proc_cur();
-	pmap_inval(curr->pdir, PGADDR(fva), PAGESIZE); // Invalidate the cache
     pte_t *entry = pmap_walk(curr->pdir, fva, 1);
     // The page must be nominally writable
     if(!(*entry & SYS_WRITE)) 
         return;
     pte_t new = PGADDR(*entry);
-	if(mem_phys2pi(PGADDR(*entry))->refcount > 1 // shared for copy on write
-            || PGADDR(*entry) == PTE_ZERO) {      // we can also copy zero pages!
-		pageinfo *p = mem_alloc();
-		memmove((void*)mem_pi2phys(p), (void*)PGADDR(*entry), PAGESIZE);
-		if(PGADDR(*entry) != PTE_ZERO)
-			mem_decref(mem_phys2pi(PGADDR(*entry)), mem_free);
-		new = mem_pi2phys(p);
-		mem_incref(p);
-	}
-	*entry = new | SYS_WRITE // still nominally writable
-        | PTE_P | PTE_U     // present and in user space
-        | PTE_W;    // system writable and accessed
-	trap_return(tf);
+    if(mem_phys2pi(PGADDR(*entry))->refcount > 1 // shared for copy on write
+        || PGADDR(*entry) == PTE_ZERO) {      // we can also copy zero pages!
+            pageinfo *p = mem_alloc();
+            if(PGADDR(*entry) != PTE_ZERO)
+                    mem_decref(mem_phys2pi(PGADDR(*entry)), mem_free);
+            mem_incref(p);
+            memmove((void*)mem_pi2phys(p), (void*)PGADDR(*entry), PAGESIZE);
+            new = mem_pi2phys(p);
+    }
+    *entry = new | SYS_WRITE // still nominally writable
+    | PTE_P | PTE_U // present and in user space
+    | PTE_W;    // system writable and accessed
+    pmap_inval(curr->pdir, PGADDR(fva), PAGESIZE);
+    trap_return(tf);
 }
 
 //
@@ -430,6 +428,32 @@ pmap_pagefault(trapframe *tf)
 void
 pmap_mergepage(pte_t *rpte, pte_t *spte, pte_t *dpte, uint32_t dva)
 {
+    uint8_t *dest = (uint8_t*)PGADDR(*dpte); // We're doing a byte by byte merge hence uint8_t
+    uint8_t *src = (uint8_t*)PGADDR(*spte);
+
+    // If dest is read-shared we have to copy it
+    // same as in page fault handler
+    if(mem_ptr2pi(dest)->refcount > 1
+            || dest == (uint8_t*)PTE_ZERO) {  // zero pages have to be copied too so we can "write" to them
+        pageinfo *p = mem_alloc();
+        if(dest != (uint8_t*)PTE_ZERO)
+            mem_decref(mem_ptr2pi(dest), mem_free);
+        mem_incref(p);
+        memmove(mem_pi2ptr(p), dest, PAGESIZE);
+        dest = mem_pi2ptr(p);
+        *dpte = (pte_t)mem_pi2ptr(p) | SYS_RW | PTE_P | PTE_U | PTE_W;
+    }
+    uint8_t *snap = (uint8_t*)PGADDR(*rpte);
+	int i;
+	for(i = 0; i < PAGESIZE; i++) {
+		if(!(src[i] == snap[i] || dest[i] == snap[i])) {
+            cprintf("Warning: merge conflict.\n");  // if neither src or dest match ref we have a conflict
+            *dpte = PTE_ZERO;
+            return;
+        }
+		if(dest[i] == snap[i])  // only copy when something has changed
+			dest[i] = src[i];
+	}
 }
 
 // 
@@ -447,7 +471,53 @@ pmap_merge(pde_t *rpdir, pde_t *spdir, uint32_t sva,
 	assert(dva >= VM_USERLO && dva < VM_USERHI);
 	assert(size <= VM_USERHI - sva);
 	assert(size <= VM_USERHI - dva);
-    panic("shit");
+
+	pde_t *src = &spdir[PDX(sva)];
+	pde_t *dst = &dpdir[PDX(dva)];
+	pde_t *snp = &rpdir[PDX(sva)];
+
+	pmap_inval(spdir, sva, size); // invalidate anything we might change
+	pmap_inval(dpdir, dva, size);
+    pmap_inval(rpdir, sva, size); // same range in reference as source
+
+	uint32_t start = sva;
+    uint32_t end = start + size;
+    for(; start < end; snp++, dst++, src++) {
+		if(*src == *snp) {	
+			start += PTSIZE;
+            dva += PTSIZE;
+			continue;
+		}
+		if (*dst == *snp) {	// unchanged in dest - copy from source
+			pmap_copy(spdir, start, dpdir, dva, PTSIZE);
+			start += PTSIZE;
+            dva += PTSIZE;
+			continue;
+		}
+		
+        // We have to go entry by entry, different in both src and dest
+		pte_t *src_e = pmap_walk(spdir, start, 1);
+		pte_t *dst_e = pmap_walk(dpdir, dva, 1);	
+        pte_t *snp_e = pmap_walk(rpdir, start, 1);
+
+        int i;
+        for(i = 0; i < 1024; i++, src_e++, dst_e++, snp_e++,
+                start += PAGESIZE, dva += PAGESIZE) {
+            // Same deal entry by entry
+            if(!(*src_e == *snp_e) && !(*dst_e == *snp_e)) {
+                // we have to do a byte merge
+                pmap_mergepage(snp_e, src_e, dst_e, dva);
+            } else if (*dst_e == *snp_e && *src_e != *snp_e) {	// just do a full copy with copy on write
+				if(PGADDR(*dst_e) != PTE_ZERO)
+					mem_decref(mem_phys2pi(PGADDR(*dst_e)), mem_free);
+				mem_incref(mem_phys2pi(PGADDR(*src_e)));
+				*dst_e = *src_e;
+				*src_e &= ~PTE_W; // not writeable anymore bc its copied
+                *dst_e &= ~PTE_W;
+			}
+        }
+	}
+	return 1;
 }
 
 // 
@@ -461,12 +531,39 @@ pmap_merge(pde_t *rpdir, pde_t *spdir, uint32_t sva,
 int
 pmap_setperm(pde_t *pdir, uint32_t va, uint32_t size, int perm)
 {
-	assert(PGOFF(va) == 0);
-	assert(PGOFF(size) == 0);
-	assert(va >= VM_USERLO && va < VM_USERHI);
-	assert(size <= VM_USERHI - va);
-	assert((perm & ~(SYS_RW)) == 0);
-    panic("damn");
+        assert(PGOFF(va) == 0);
+        assert(PGOFF(size) == 0);
+        assert(va >= VM_USERLO && va < VM_USERHI);
+        assert(size <= VM_USERHI - va);
+        assert((perm & ~(SYS_RW)) == 0);
+
+        pmap_inval(pdir, va, size);
+        
+        uint32_t start = va;
+        uint32_t end = start + size;
+        while(start < end) {
+            pde_t *tab = &pdir[PDX(start)];
+            if(*tab == PTE_ZERO     // if theres no entry here
+                    && !(perm & SYS_READ)) {// and we dont have to change permission on zero pages
+                start = PTADDR(start + PTSIZE); // Next page table
+                continue;
+            }
+            pte_t *entry = pmap_walk(pdir, start, 1);
+            while(start < end) {    
+                if((perm & SYS_READ) && (perm & SYS_WRITE))
+                    *entry |= SYS_RW | PTE_U | PTE_P | PTE_A | PTE_D;
+                else if((perm & SYS_READ)) {
+                    *entry &= ~SYS_WRITE & ~PTE_W;    // no more write
+                    *entry |= SYS_READ | PTE_U | PTE_P;
+                } else
+                    *entry &= ~SYS_RW & ~PTE_P & ~PTE_W;
+                *entry++;
+                start += PAGESIZE;
+                if(PTX(start) == 0) // we reached the end of the table
+                    break;
+            }
+        }
+        return 1;
 }
 
 static uint32_t
