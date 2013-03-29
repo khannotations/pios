@@ -56,7 +56,7 @@ NETPORT := $(shell expr `id -u` % 5000 + 30000)
 # QEMUPORT := -s -p $(GDBPORT)
 QEMUPORT := -gdb tcp::$(GDBPORT)
 
-CC	:= $(GCCPREFIX)gcc -pipe
+CC	:= $(GCCPREFIX)gcc-3.3 -pipe
 AS	:= $(GCCPREFIX)as
 AR	:= $(GCCPREFIX)ar
 LD	:= $(GCCPREFIX)ld
@@ -136,10 +136,10 @@ include user/Makefrag
 
 
 
-NCPUS = 2
+NCPUS = 1
 IMAGES = $(OBJDIR)/kern/kernel.img
 QEMUOPTS = -smp $(NCPUS) -hda $(OBJDIR)/kern/kernel.img -serial mon:stdio \
-		-k en-us -m 1100M
+		-k en-us -m 1100M -d int
 #QEMUNET = -net socket,mcast=230.0.0.1:$(NETPORT) -net nic,model=i82559er
 QEMUNET1 = -net nic,model=i82559er,macaddr=52:54:00:12:34:01 \
 		-net socket,connect=:$(NETPORT) -net dump,file=node1.dump

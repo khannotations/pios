@@ -59,6 +59,12 @@ init(void)
 	// Can't call cprintf until after we do this!
 	cons_init();
 
+	// Lab 1: test cprintf and debug_trace
+	cprintf("1234 decimal is %o octal!\n", 1234);
+   	unsigned int i = 0x00646c72;
+    cprintf("H%x Wo%s", 57616, &i);
+	debug_check();
+
 	// Initialize and load the bootstrap CPU's GDT, TSS, and IDT.
 	cpu_init();
 	trap_init();
@@ -80,8 +86,8 @@ init(void)
 	ioapic_init();		// prepare to handle external device interrupts
 	lapic_init();		// setup this CPU's local APIC
 	cpu_bootothers();	// Get other processors started
-//	cprintf("CPU %d (%s) has booted\n", cpu_cur()->id,
-//		cpu_onboot() ? "BP" : "AP");
+    cprintf("CPU %d (%s) has booted\n", cpu_cur()->id,
+		cpu_onboot() ? "BP" : "AP");
 
 	// Initialize the I/O system.
 	file_init();		// Create root directory and console I/O files
@@ -95,7 +101,65 @@ init(void)
 	// Lab 1: change this so it enters user() in user mode,
 	// running on the user_stack declared above,
 	// instead of just calling user() directly.
-	user();
+    //user();
+    
+    //trapframe tf;
+    //memset(&tf, 0, sizeof(tf));
+
+	/*tf.cs = CPU_GDT_UCODE | 3;
+	tf.ds = CPU_GDT_UDATA | 3;
+	tf.es = CPU_GDT_UDATA | 3;
+    tf.ss = CPU_GDT_UDATA | 3;
+	tf.eflags = FL_IOPL_3;
+	*/
+    /*tf.esp = (uint32_t) &user_stack[PAGESIZE];
+	tf.eip = (uint32_t) user;
+*/
+    if(!cpu_onboot())
+        proc_sched();
+    
+    proc_root = proc_alloc(NULL, 0);
+    elfhdr *elf = (elfhdr*)ROOTEXE_START;
+
+	proghdr *prog = (proghdr*)((void*)elf + elf->e_phoff);
+    uint32_t count = elf->e_phnum;
+    int k;
+	for (k = 0; k < count; k++) {
+        int perms = PTE_P | PTE_U;
+        if(prog->p_flags & ELF_PROG_FLAG_WRITE)
+            perms |= PTE_W | SYS_WRITE | SYS_READ;
+        else
+            perms |= SYS_READ;
+		
+        void *off = (void*)elf + ROUNDDOWN(prog->p_offset, PAGESIZE);
+		uint32_t start = ROUNDDOWN(prog->p_va, PAGESIZE);
+		uint32_t end = ROUNDUP(prog->p_va + prog->p_memsz, PAGESIZE);
+		while(start < end) {
+			pageinfo *p = mem_alloc();
+			if (start < ROUNDDOWN(prog->p_va + prog->p_filesz, PAGESIZE)) // complete page
+				memmove(mem_pi2ptr(p), off, PAGESIZE);
+			else {
+				memset(mem_pi2ptr(p), 0, PAGESIZE);
+                int remainder = (prog->p_va + prog->p_filesz) - start;
+                if(remainder > 0)
+				    memmove(mem_pi2ptr(p), off, remainder);
+			}
+			pmap_insert(proc_root->pdir, p, start, perms);
+            start += PAGESIZE;
+            off += PAGESIZE;
+		}
+        prog++;
+	}
+
+    pageinfo *p = mem_alloc();
+    pte_t *pte = pmap_insert(proc_root->pdir,
+            p, VM_STACKHI - PAGESIZE, PTE_P | PTE_W | PTE_U |
+            SYS_READ | SYS_WRITE);  // Nomimally read-write
+    proc_root->sv.tf.eip = elf->e_entry;
+    proc_root->sv.tf.esp = VM_STACKHI;
+    proc_root->sv.tf.eflags |= FL_IF;
+    proc_ready(proc_root);
+    proc_sched();
 }
 
 // This is the first function that gets run in user mode (ring 3).

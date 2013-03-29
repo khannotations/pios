@@ -40,8 +40,53 @@ static void
 trap_init_idt(void)
 {
 	extern segdesc gdt[];
-	
-	panic("trap_init() not implemented.");
+    
+    // All the trap handlers.
+    extern char tdivide, 
+                tdebug, 
+                tnmi, 
+                tbrkpt, 
+                toflow,
+                tbound, 
+                tillop, 
+                tdivide, 
+                tdblflt, 
+                ttss, 
+                tsegnp,
+                tstack, 
+                tgpflt, 
+                tpgflt, 
+                tfperr, 
+                talign, 
+                tmchk, 
+                tsimd, 
+                tsecev, 
+                tirq0,
+		        tsystem,
+                tltimer;
+        
+    SETGATE(idt[T_DIVIDE], 0, CPU_GDT_KCODE, &tdivide, 0);
+    SETGATE(idt[T_DEBUG], 0, CPU_GDT_KCODE, &tdebug, 0);
+    SETGATE(idt[T_NMI], 0, CPU_GDT_KCODE, &tnmi, 0);
+    SETGATE(idt[T_BRKPT], 0, CPU_GDT_KCODE, &tbrkpt, 3);
+    SETGATE(idt[T_OFLOW], 0, CPU_GDT_KCODE, &toflow, 3);
+    SETGATE(idt[T_BOUND], 0, CPU_GDT_KCODE, &tbound, 0);
+    SETGATE(idt[T_ILLOP], 0, CPU_GDT_KCODE, &tillop, 0);
+    SETGATE(idt[T_DEVICE], 0, CPU_GDT_KCODE, &tdivide, 0);
+    SETGATE(idt[T_DBLFLT], 0, CPU_GDT_KCODE, &tdblflt, 0);
+    SETGATE(idt[T_TSS], 0, CPU_GDT_KCODE, &ttss, 0);
+    SETGATE(idt[T_SEGNP], 0, CPU_GDT_KCODE, &tsegnp, 0);
+    SETGATE(idt[T_STACK], 0, CPU_GDT_KCODE, &tstack, 0);
+    SETGATE(idt[T_GPFLT], 0, CPU_GDT_KCODE, &tgpflt, 0);
+    SETGATE(idt[T_PGFLT], 0, CPU_GDT_KCODE, &tpgflt, 0);
+    SETGATE(idt[T_FPERR], 0, CPU_GDT_KCODE, &tfperr, 0);
+    SETGATE(idt[T_ALIGN], 0, CPU_GDT_KCODE, &talign, 0);
+    SETGATE(idt[T_MCHK], 0, CPU_GDT_KCODE, &tmchk, 0);
+    SETGATE(idt[T_SIMD], 0, CPU_GDT_KCODE, &tsimd, 0);
+    SETGATE(idt[T_SECEV], 0, CPU_GDT_KCODE, &tsecev, 0);
+    SETGATE(idt[T_IRQ0], 0, CPU_GDT_KCODE, &tirq0, 0);
+    SETGATE(idt[T_SYSCALL], 0, CPU_GDT_KCODE, &tsystem, 3);
+    SETGATE(idt[T_LTIMER], 0, CPU_GDT_KCODE, &tltimer, 0);
 }
 
 void
@@ -130,12 +175,34 @@ trap(trapframe *tf)
 	// and some versions of GCC rely on DF being clear.
 	asm volatile("cld" ::: "cc");
 
+  // If it's a pagefault, check if it's one to blame on the user,
+  // or this function will call trap_return itself.
+  if(tf->trapno == T_PGFLT)
+    pmap_pagefault(tf);
+
 	// If this trap was anticipated, just use the designated handler.
 	cpu *c = cpu_cur();
 	if (c->recover)
 		c->recover(tf, c->recoverdata);
 
-	// Lab 2: your trap handling code here!
+  if(tf->trapno == T_SYSCALL)
+      syscall(tf);
+
+  if(tf->trapno == T_LTIMER) {
+      lapic_eoi();
+      //cprintf("Timer Interrupt.\n");
+      if(tf->cs & 3)
+          proc_yield(tf);
+      trap_return(tf);
+  }
+
+  if(tf->trapno == T_IRQ0+IRQ_SPURIOUS) {
+      cprintf("Spurious Interrupt. That's weird.\n");
+      trap_return(tf);
+  }
+
+  if(tf->cs & 3) // USER MODE, reflect to parent
+      proc_ret(tf, -1);
 
 	// If we panic while holding the console lock,
 	// release it so we don't get into a recursive panic that way.
