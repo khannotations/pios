@@ -15,6 +15,8 @@
 #include <inc/syscall.h>
 #include <inc/dirent.h>
 
+#include <inc/file.h>
+
 #include <kern/cpu.h>
 #include <kern/trap.h>
 #include <kern/proc.h>
@@ -72,6 +74,7 @@ file_initroot(proc *root)
 	lcr3(mem_phys(root->pdir));
 
 	// Enable read/write access on the file metadata area
+	cprintf("Calling pmap set perm\n");
 	pmap_setperm(root->pdir, FILESVA, ROUNDUP(sizeof(filestate), PAGESIZE),
 				SYS_READ | SYS_WRITE);
 	memset(files, 0, sizeof(*files));
@@ -110,7 +113,24 @@ file_initroot(proc *root)
 	// (i.e., a pointer to the first byte after the file's last byte).
 	int ninitfiles = sizeof(initfiles)/sizeof(initfiles[0]);
 	// Lab 4: your file system initialization code here.
-	warn("file_initroot: file system initialization not done\n");
+	int i;
+	for(i=0; i<ninitfiles; i++) {
+		int ino = i + FILEINO_GENERAL;
+		int fsize = initfiles[i][2] - initfiles[i][1];
+		// Need to set name, dino, mode, size, permissions, just like above.
+		// We also need to copy the file data into the FILEDATA for that inode
+		strcpy(files->fi[ino].de.d_name, initfiles[i][0]);
+		files->fi[ino].dino = FILEINO_ROOTDIR;					// In the root directory
+		files->fi[ino].mode = S_IFREG;									// Regular file
+		files->fi[ino].size = fsize;										// The size, as calculated above.
+		// Read - write permission for the system (we need to ROUNDUP because pmap_setperm)
+		// expects sizes in the multiple of PTSIZE
+		pmap_setperm(root->pdir, (uintptr_t)FILEDATA(ino), 
+			ROUNDUP(fsize, PTSIZE), SYS_READ | SYS_WRITE);
+		// Copy the data over
+		memcpy(FILEDATA(ino), initfiles[i][1], fsize);
+	}
+	// warn("file_initroot: file system initialization not done\n");
 
 	// Set root process's current working directory
 	files->cwd = FILEINO_ROOTDIR;

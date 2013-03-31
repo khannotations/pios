@@ -547,8 +547,9 @@ pmap_setperm(pde_t *pdir, uint32_t va, uint32_t size, int perm)
     }
     pte_t *entry = pmap_walk(pdir, start, 1);
     while(start < end) {    
-      if((perm & SYS_READ) && (perm & SYS_WRITE))
-        *entry |= SYS_RW | PTE_U | PTE_P | PTE_A | PTE_D;
+      if((perm & SYS_READ) && (perm & SYS_WRITE)){
+              *entry |= SYS_RW | PTE_U | PTE_P | PTE_A | PTE_D;
+            }
       else if((perm & SYS_READ)) {
         *entry &= ~SYS_WRITE & ~PTE_W;    // no more write
         *entry |= SYS_READ | PTE_U | PTE_P;

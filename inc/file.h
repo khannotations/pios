@@ -84,10 +84,10 @@ struct dirent {				// Directory entry - should be 64 bytes
 // the user-space file system itself provides the only "buffering" we need.
 //
 typedef struct filedesc {		// Per-open file descriptor state
-	ino_t	ino;			// Opened file's inode number
-	int	flags;			// File open flags - O_*, above
-	off_t	ofs;			// Current seek pointer in file or dir
-	int	err;			// Last error on this file descriptor
+	ino_t	ino;								// Opened file's inode number
+	int	flags;								// File open flags - O_*, above
+	off_t	ofs;								// Current seek pointer in file or dir
+	int	err;									// Last error on this file descriptor
 } filedesc;
 
 // Per-file "inode" metadata structure.
@@ -97,11 +97,11 @@ typedef struct filedesc {		// Per-open file descriptor state
 // and the next few of which have reserved uses (FILE_INO_*).
 //
 typedef struct fileinode {		// Per-file state - like an "inode"
-	int	dino;			// Directory this entry lives in
-	struct dirent de;		// Entry name, "" if free entry
-	int	ver;			// Version - bumped on every change
-	mode_t	mode;			// File mode (stat.h), 0 if deleted
-	size_t	size;			// Current size if regular file
+	int	dino;										// Directory this entry lives in
+	struct dirent de;						// Entry name, "" if free entry
+	int	ver;										// Version - bumped on every change
+	mode_t	mode;								// File mode (stat.h), 0 if deleted
+	size_t	size;								// Current size if regular file
 
 	// Reference information for file system state reconciliation
 	int	rino;			// Parent's inode this corresponds to

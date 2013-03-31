@@ -60,6 +60,7 @@ initfilecheck()
 
 		count++;
 	}
+	cprintf("exited for loop...\n");
 	for (; ino < FILE_INODES; ino++) {
 		// all the rest of the inodes should be empty
 		assert(files->fi[ino].dino == FILEINO_NULL);
