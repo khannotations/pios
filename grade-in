@@ -1,0 +1,7 @@
+
+FOOBAR
+echo echo in script >script
+sh <script >out
+cat script out
+wc script out
+exit

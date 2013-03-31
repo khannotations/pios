@@ -167,7 +167,6 @@ seekcheck()
 	rc = lseek(fd, 0, SEEK_END); assert(rc == st.st_size);
 	rc = lseek(fd, -1024, SEEK_END); assert(rc == st.st_size-1024);
 	rc = lseek(fd, 12345, SEEK_END); assert(rc == st.st_size+12345);
-
 	// Read some blocks sequentially from the beginning of the file,
 	// and compare against what we get if we directly seek to a block
 	rc = lseek(fd, -st.st_size, SEEK_END); assert(rc == 0);
@@ -217,9 +216,11 @@ seekcheck()
 	assert(memcmp(buf3, buf2, 2048) == 0); // shouldn't have touched buf3
 
 	// try to grow a file too big for PIOS's file system
+	cprintf("seekcheck: before read\n");
 	memcpy(buf3, FILEDATA(files->fd[fd].ino+1), 2048); // corruption check
 	rc = lseek(fd, FILE_MAXSIZE, SEEK_SET); assert(rc == FILE_MAXSIZE);
 	act = write(fd, buf, 2048); assert(act < 0); assert(errno == EFBIG);
+	cprintf("seekcheck: after read\n");
 	assert(memcmp(buf3, FILEDATA(files->fd[fd].ino+1), 2048) == 0);
 
 	// The file should still be 1KB larger than its original size

@@ -169,7 +169,8 @@ do_get(trapframe *tf, uint32_t cmd)
     proc *child = curr->child[child_index];
 
     if(!child)
-        cprintf("No child process %d\n", child_index);
+      child = &proc_null;
+      // cprintf("No child process %d\n", child_index);
 
     if(child->state != PROC_STOP)
 		proc_wait(curr, child, tf);
