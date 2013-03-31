@@ -1,3 +1,0 @@
-target remote localhost:28775
-br *0x00100431
-c
