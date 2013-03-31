@@ -90,9 +90,22 @@ fileino_read(int ino, off_t ofs, void *buf, size_t eltsize, size_t count)
 
 	fileinode *fi = &files->fi[ino];
 	assert(fi->size <= FILE_MAXSIZE);
-
+	assert(ofs <= fi->size); 
 	// Lab 4: insert your file reading code here.
-	warn("fileino_read() not implemented");
+	// Get start pointer
+	void *place = FILEDATA(ino) + ofs;
+	int bytes_to_read = eltsize*count;
+	// Find the limiting factor: buffer size, file size, or things to read
+	cprintf("fileino_read: sizes: fi size: %d, to read: %d\n", fi->size, bytes_to_read);
+
+	int limit = bytes_to_read < fi->size ? bytes_to_read : fi->size;
+	// Copy data over
+	memcpy(buf, place, limit);
+	cprintf("fileino_read: limit: %d, returning %d\n", limit, (limit/eltsize));
+	return limit/eltsize;
+
+
+	// warn("fileino_read() not implemented");
 	errno = EINVAL;
 	return -1;
 }
@@ -117,8 +130,25 @@ fileino_write(int ino, off_t ofs, const void *buf, size_t eltsize, size_t count)
 	fileinode *fi = &files->fi[ino];
 	assert(fi->size <= FILE_MAXSIZE);
 
+	// Rafi's asserts
+	int bytes_to_write = eltsize * count;
+	assert(ofs <= fi->size); 
+	// Check that the file isn't getting too big
+	if(ofs + bytes_to_write > FILE_MAXSIZE) {
+		errno = EFBIG;
+		return -1;
+	}
+
+	void *place = FILEDATA(ino) + ofs;
+	// Copy data over, this time from the buffer into the file.
+	memcpy(place, buf, bytes_to_write);
+	// Set the new filesize
+	if(fi->size < ofs + bytes_to_write)
+		fi->size = ofs + bytes_to_write;
+	return count;
+
 	// Lab 4: insert your file writing code here.
-	warn("fileino_write() not implemented");
+	// warn("fileino_write() not implemented");
 	errno = EINVAL;
 	return -1;
 }
