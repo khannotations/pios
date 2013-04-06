@@ -177,5 +177,3 @@ long telldir(DIR *dir)
 {
 	return dir->ofs;
 }
-
-

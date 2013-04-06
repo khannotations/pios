@@ -208,7 +208,7 @@ do_get(trapframe *tf, uint32_t cmd)
 
 static void
 do_ret(trapframe *tf, uint32_t cmd) {
-    proc_ret(tf, 1);
+  proc_ret(tf, 1);
 }
 
 // Common function to handle all system calls -

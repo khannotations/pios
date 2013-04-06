@@ -77,6 +77,7 @@ fclose(FILE *fd)
 int
 fgetc(FILE *fd)
 {
+	// cprintf("fgetc: %d\n", fd->ino);
 	unsigned char ch;
 	if (filedesc_read(fd, &ch, 1, 1) < 1)
 		return EOF;

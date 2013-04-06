@@ -32,6 +32,9 @@
 void cons_intr(int (*proc)(void));
 static void cons_putc(int c);
 
+// To keep track of write out
+static int cons_out_pos;
+
 spinlock cons_lock;	// Spinlock to make console output atomic
 
 /***** General device-independent console code *****/
@@ -64,7 +67,7 @@ cons_intr(int (*proc)(void))
 			cons.wpos = 0;
 	}
 	spinlock_release(&cons_lock);
-
+	// cprintf("cons_intr: %c\n", cons.buf[cons.wpos-1]);
 	// Wake the root process
 	file_wakeroot();
 }
@@ -73,6 +76,7 @@ cons_intr(int (*proc)(void))
 int
 cons_getc(void)
 {
+	// cprintf("cons_getc\n");
 	int c;
 
 	// poll for any pending input characters,
@@ -110,6 +114,8 @@ cons_init(void)
 	video_init();
 	kbd_init();
 	serial_init();
+
+	cons_out_pos = 0;
 
 	if (!serial_exists)
 		warn("Serial port does not exist!\n");
@@ -153,8 +159,28 @@ cputs(const char *str)
 bool
 cons_io(void)
 {
-	// Lab 4: your console I/O code here.
-	warn("cons_io() not implemented");
-	return 0;	// 0 indicates no I/O done
+	int num_io = 0;
+
+	// Get output file
+	fileinode *fi = &files->fi[FILEINO_CONSOUT];
+	int c;
+	// spinlock_acquire(&cons_lock);
+	while(cons_out_pos < fi->size) {
+		c = ((char*)FILEDATA(FILEINO_CONSOUT))[cons_out_pos];
+		cons_putc(c);
+		num_io++;
+		cons_out_pos++;
+	}
+	// spinlock_release(&cons_lock);
+	// Input file
+	fi = &files->fi[FILEINO_CONSIN];
+	// Read from console
+	while(fi->size < FILE_MAXSIZE && (c = cons_getc())) {
+		// And appened to CONSIN
+		((char*)FILEDATA(FILEINO_CONSIN))[fi->size++] = c;
+		num_io++;
+	}
+
+	return num_io;
 }
 

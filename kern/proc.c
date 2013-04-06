@@ -42,7 +42,7 @@ proc_init(void)
 proc *
 proc_alloc(proc *p, uint32_t cn)
 {
-    pageinfo *pi = mem_alloc();
+  pageinfo *pi = mem_alloc();
 	if (!pi)
 		return NULL;
 	mem_incref(pi);
@@ -59,7 +59,7 @@ proc_alloc(proc *p, uint32_t cn)
 	cp->sv.tf.cs = CPU_GDT_UCODE | 3;
 	cp->sv.tf.ss = CPU_GDT_UDATA | 3;
     
-    cp->pdir = pmap_newpdir();
+  cp->pdir = pmap_newpdir();
 	cp->rpdir = pmap_newpdir();
 
 	if (p)
@@ -120,13 +120,17 @@ proc_sched(void)
 {
   spinlock_acquire(&_proc_queue_lock);
   while(!queue_head) {
+    // Release the spinlock while waiting
     spinlock_release(&_proc_queue_lock);
     while(!queue_head) {
+      // Enable interrupts briefly for keyboard, serial
       sti();
       pause();
       cli();
     }
     spinlock_acquire(&_proc_queue_lock);
+    // Now make sure queue_head didn't get snatched while we were
+    // acquiring the spinlock
   }
 
   proc *to_run = queue_head;
@@ -170,6 +174,15 @@ proc_ret(trapframe *tf, int entry)
 {
   proc *me = proc_cur();
   proc *parent = me->parent;
+  // Root process incurs trap...
+  if(parent == NULL) {
+    if(tf->trapno != T_SYSCALL) {
+      trap_print(tf);
+      panic("proc_ret: trap in root process\n");
+    }
+    file_io(tf);
+  }
+
   spinlock_acquire(&parent->lock);
   me->state = PROC_STOP;
   proc_save(me, tf, entry);

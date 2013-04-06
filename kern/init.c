@@ -92,7 +92,7 @@ init(void)
 	// Initialize the I/O system.
 	file_init();		// Create root directory and console I/O files
 	// Lab 4: uncomment this when you can handle IRQ_SERIAL and IRQ_KBD.
-	//cons_intenable();	// Let the console start producing interrupts
+	cons_intenable();	// Let the console start producing interrupts
 
 	// Initialize the process management code.
 	proc_init();

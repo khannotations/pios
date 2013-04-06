@@ -216,11 +216,9 @@ seekcheck()
 	assert(memcmp(buf3, buf2, 2048) == 0); // shouldn't have touched buf3
 
 	// try to grow a file too big for PIOS's file system
-	cprintf("seekcheck: before read\n");
 	memcpy(buf3, FILEDATA(files->fd[fd].ino+1), 2048); // corruption check
 	rc = lseek(fd, FILE_MAXSIZE, SEEK_SET); assert(rc == FILE_MAXSIZE);
 	act = write(fd, buf, 2048); assert(act < 0); assert(errno == EFBIG);
-	cprintf("seekcheck: after read\n");
 	assert(memcmp(buf3, FILEDATA(files->fd[fd].ino+1), 2048) == 0);
 
 	// The file should still be 1KB larger than its original size
@@ -318,6 +316,7 @@ consoutcheck()
 	fclose(f);
 
 	cprintf("Buffered console output should NOT have appeared yet\n");
+	// proc *p = proc_cur();
 	sys_ret();	// Synchronize with the kernel, deliver console output
 	cprintf("Buffered console output SHOULD have appeared now\n");
 

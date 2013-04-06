@@ -73,8 +73,7 @@ file_initroot(proc *root)
 	cpu_cur()->proc = root;
 	lcr3(mem_phys(root->pdir));
 
-	// Enable read/write access on the file metadata area
-	cprintf("Calling pmap set perm\n");
+	// Enable read/write access on the file metadata area	
 	pmap_setperm(root->pdir, FILESVA, ROUNDUP(sizeof(filestate), PAGESIZE),
 				SYS_READ | SYS_WRITE);
 	memset(files, 0, sizeof(*files));

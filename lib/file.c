@@ -90,9 +90,22 @@ fileino_read(int ino, off_t ofs, void *buf, size_t eltsize, size_t count)
 
 	fileinode *fi = &files->fi[ino];
 	assert(fi->size <= FILE_MAXSIZE);
-	if(ofs > fi->size) {
-		return 0; // Nothing to read...
-	} 
+
+	// If nothing to read or reading past end of file, return 0
+	if(count == 0) {
+		return 0;
+	}
+	// Reading past end of file
+	while(ofs >= fi->size) {
+		if(fi->mode & S_IFPART) {
+			// Part file: wait for input
+			// cprintf("fileino_read: waiting for fd %d: size=ofs=%d\n", ino, fi->size);	
+			sys_ret();
+		} else {
+			// Not a part file, empty read.
+			return 0;
+		}
+	}
 
 	// Get start pointer
 	void *place = FILEDATA(ino) + ofs;
@@ -137,8 +150,8 @@ fileino_write(int ino, off_t ofs, const void *buf, size_t eltsize, size_t count)
 
 	void *place = FILEDATA(ino) + ofs;
 	// Manage permissions
-	// sys_get(SYS_PERM | SYS_READ | SYS_WRITE, 0, NULL, NULL,
-	//		place, ROUNDUP(bytes_to_write, PTSIZE));
+	sys_get(SYS_PERM | SYS_READ | SYS_WRITE, 0, NULL, NULL,
+			ROUNDDOWN(place, PTSIZE), ROUNDUP(bytes_to_write, PTSIZE));
 	// Copy data over, this time from the buffer into the file.
 	memcpy(place, buf, bytes_to_write);
 	// Set the new filesize if it's bigger

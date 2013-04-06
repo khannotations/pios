@@ -42,28 +42,10 @@ trap_init_idt(void)
 	extern segdesc gdt[];
     
     // All the trap handlers.
-    extern char tdivide, 
-                tdebug, 
-                tnmi, 
-                tbrkpt, 
-                toflow,
-                tbound, 
-                tillop, 
-                tdivide, 
-                tdblflt, 
-                ttss, 
-                tsegnp,
-                tstack, 
-                tgpflt, 
-                tpgflt, 
-                tfperr, 
-                talign, 
-                tmchk, 
-                tsimd, 
-                tsecev, 
-                tirq0,
-		        tsystem,
-                tltimer;
+    extern char tdivide, tdebug, tnmi, tbrkpt, toflow, tbound, tillop, 
+                tdivide, tdblflt, ttss, tsegnp, tstack, tgpflt, tpgflt, 
+                tfperr, talign, tmchk, tsimd, tsecev, tirq0, tirqkbd, tirqser,
+                tsystem, tltimer;
         
     SETGATE(idt[T_DIVIDE], 0, CPU_GDT_KCODE, &tdivide, 0);
     SETGATE(idt[T_DEBUG], 0, CPU_GDT_KCODE, &tdebug, 0);
@@ -84,7 +66,12 @@ trap_init_idt(void)
     SETGATE(idt[T_MCHK], 0, CPU_GDT_KCODE, &tmchk, 0);
     SETGATE(idt[T_SIMD], 0, CPU_GDT_KCODE, &tsimd, 0);
     SETGATE(idt[T_SECEV], 0, CPU_GDT_KCODE, &tsecev, 0);
+
+    // IRQ
     SETGATE(idt[T_IRQ0], 0, CPU_GDT_KCODE, &tirq0, 0);
+    SETGATE(idt[T_IRQ0+IRQ_KBD], 0, CPU_GDT_KCODE, &tirqkbd, 0);
+    SETGATE(idt[T_IRQ0+IRQ_SERIAL], 0, CPU_GDT_KCODE, &tirqser, 0);
+
     SETGATE(idt[T_SYSCALL], 0, CPU_GDT_KCODE, &tsystem, 3);
     SETGATE(idt[T_LTIMER], 0, CPU_GDT_KCODE, &tltimer, 0);
 }
@@ -185,31 +172,47 @@ trap(trapframe *tf)
 	if (c->recover)
 		c->recover(tf, c->recoverdata);
 
-  if(tf->trapno == T_SYSCALL)
+  switch(tf->trapno) {
+    case T_SYSCALL:
       syscall(tf);
-
-  if(tf->trapno == T_LTIMER) {
+      break;
+    case T_LTIMER:
       lapic_eoi();
       //cprintf("Timer Interrupt.\n");
       if(tf->cs & 3)
-          proc_yield(tf);
+        proc_yield(tf);
       trap_return(tf);
-  }
-
-  if(tf->trapno == T_IRQ0+IRQ_SPURIOUS) {
+    case T_IRQ0+IRQ_KBD:
+      // cprintf("Keyboard interrupt\n");
+      kbd_intr();
+      lapic_eoi();
+      // if(!tf->cs & 3) {
+      //   proc_yield(tf);
+      // }
+      trap_return(tf);
+    case T_IRQ0+IRQ_SERIAL:
+      // cprintf("Serial interrupt\n");
+      lapic_eoi();
+      serial_intr();
+      // if(!tf->cs & 3)
+      //   proc_yield(tf);
+      trap_return(tf);
+    case T_IRQ0+IRQ_SPURIOUS:
       cprintf("Spurious Interrupt. That's weird.\n");
       trap_return(tf);
   }
 
   if(tf->cs & 3) // USER MODE, reflect to parent
-      proc_ret(tf, -1);
+    proc_ret(tf, -1);
 
 	// If we panic while holding the console lock,
 	// release it so we don't get into a recursive panic that way.
 	if (spinlock_holding(&cons_lock))
 		spinlock_release(&cons_lock);
+
+  char* msg = tf->cs & 3 ? "in user mode" : "in kernel";
 	trap_print(tf);
-	panic("unhandled trap");
+	panic("unhandled trap %s", msg);
 }
 
 
