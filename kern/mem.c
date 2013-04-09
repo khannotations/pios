@@ -87,22 +87,19 @@ mem_init(void)
 	int i;
 	for (i = 0; i < mem_npage; i++) {
 		if(i != 0 && i != 1) {              // Pages 0 and 1 are reserved.
-            if(i < basemem/4096 ||          // All of base memory otherwise is free
-                i >= (uint32_t)(ROUNDUP(&mem_pageinfo[mem_npage],4096))/4096) {   // After the kernel
-                                                                                // and the pageinfo table
-                                                                                // all memory should be free
-                // A free page has no references to it.
-                mem_pageinfo[i].refcount = 0;
-
-                // Add the page to the end of the free list.
-                *freetail = &mem_pageinfo[i];
-                freetail = &mem_pageinfo[i].free_next;
-            }
-        }
+      // All of base memory otherwise is free after the kernel
+      // and the pageinfo table all memory should be free
+      if(i < basemem/4096 ||          
+        i >= (uint32_t)(ROUNDUP(&mem_pageinfo[mem_npage],4096))/4096) {
+        // A free page has no references to it.
+        mem_pageinfo[i].refcount = 0;
+        // Add the page to the end of the free list.
+        *freetail = &mem_pageinfo[i];
+        freetail = &mem_pageinfo[i].free_next;
+      }
+    }
 	}
 	*freetail = NULL;	// null-terminate the freelist
-
-
 	// Check to make sure the page allocator seems to work correctly.
 	mem_check();
 }
@@ -121,12 +118,12 @@ mem_init(void)
 pageinfo *
 mem_alloc(void)
 {
-    spinlock_acquire(&_freelist_lock);
+  spinlock_acquire(&_freelist_lock);
 	pageinfo *p = mem_freelist;
 	if(p != NULL)
 		mem_freelist = p->free_next;	// Remove page from free list
-    spinlock_release(&_freelist_lock);
-    return p;
+  spinlock_release(&_freelist_lock);
+  return p;
 }
 
 //
@@ -136,10 +133,10 @@ mem_alloc(void)
 void
 mem_free(pageinfo *pi)
 {
-    spinlock_acquire(&_freelist_lock);
-    pi->free_next = mem_freelist;
-    mem_freelist = pi;
-    spinlock_release(&_freelist_lock);
+  spinlock_acquire(&_freelist_lock);
+  pi->free_next = mem_freelist;
+  mem_freelist = pi;
+  spinlock_release(&_freelist_lock);
 }
 
 //
@@ -153,9 +150,9 @@ mem_check()
 	pageinfo *fl;
 	int i;
 
-        // if there's a page that shouldn't be on
-        // the free list, try to make sure it
-        // eventually causes trouble.
+  // if there's a page that shouldn't be on
+  // the free list, try to make sure it
+  // eventually causes trouble.
 	int freepages = 0;
 	for (pp = mem_freelist; pp != 0; pp = pp->free_next) {
 		memset(mem_pi2ptr(pp), 0x97, 128);
@@ -174,9 +171,9 @@ mem_check()
 	assert(pp0);
 	assert(pp1 && pp1 != pp0);
 	assert(pp2 && pp2 != pp1 && pp2 != pp0);
-        assert(mem_pi2phys(pp0) < mem_npage*PAGESIZE);
-        assert(mem_pi2phys(pp1) < mem_npage*PAGESIZE);
-        assert(mem_pi2phys(pp2) < mem_npage*PAGESIZE);
+  assert(mem_pi2phys(pp0) < mem_npage*PAGESIZE);
+  assert(mem_pi2phys(pp1) < mem_npage*PAGESIZE);
+  assert(mem_pi2phys(pp2) < mem_npage*PAGESIZE);
 
 	// temporarily steal the rest of the free pages
 	fl = mem_freelist;
@@ -185,10 +182,10 @@ mem_check()
 	// should be no free memory
 	assert(mem_alloc() == 0);
 
-        // free and re-allocate?
-        mem_free(pp0);
-        mem_free(pp1);
-        mem_free(pp2);
+  // free and re-allocate?
+  mem_free(pp0);
+  mem_free(pp1);
+  mem_free(pp2);
 	pp0 = pp1 = pp2 = 0;
 	pp0 = mem_alloc(); assert(pp0 != 0);
 	pp1 = mem_alloc(); assert(pp1 != 0);

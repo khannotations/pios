@@ -144,6 +144,7 @@ proc_sched(void)
 void gcc_noreturn
 proc_run(proc *p)
 {
+  assert(spinlock_holding(&p->lock));
   p->state = PROC_RUN;
   cpu *curr = cpu_cur();
   curr->proc = p;
@@ -159,7 +160,6 @@ void gcc_noreturn
 proc_yield(trapframe *tf)
 {
 	proc *curr = proc_cur();
-  curr->sv.tf = *tf;
   proc_save(curr, tf, -1);
   proc_ready(curr);
   proc_sched();
@@ -182,15 +182,18 @@ proc_ret(trapframe *tf, int entry)
     }
     file_io(tf);
   }
-
-  spinlock_acquire(&parent->lock);
+  spinlock_acquire(&me->lock);
   me->state = PROC_STOP;
   proc_save(me, tf, entry);
+  spinlock_release(&me->lock);
+
+  spinlock_acquire(&parent->lock);
   if(parent->waitchild == me) {
     parent->waitchild = NULL;
     proc_run(parent);
   }
   spinlock_release(&parent->lock);
+  // On to the next one
   proc_sched();
 }
 

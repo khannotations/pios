@@ -297,29 +297,19 @@ reconcile_inode(pid_t pid, filestate *cfiles, int pino, int cino)
   bool child_changed = !(cfi->ver == rver && cfi->size == rlen);
   bool parent_changed = !(pfi->ver == rver && pfi->size == rlen);
 
-  if(!child_changed && !parent_changed) {
-    // Nothing to do
-    return false;
-  } else if(child_changed && !parent_changed) {
-    // Update versions
-    cfi->rver = pfi->rver = cfi->ver;
-    cfi->rlen = pfi->rlen = cfi->size;
-    cfi->rino = pfi->rino = cfi->rino;
-    // Update parent meta data
-    pfi->dino = cfi->dino;
-    pfi->ver  = cfi->ver;
-    strcpy(pfi->de.d_name, cfi->de.d_name);
-    pfi->mode = cfi->mode;
-    pfi->size = cfi->size;
-    // Copy physical file from child to parent (we have to copy entire page)
-    sys_get(SYS_COPY, pid, NULL, FILEDATA(cino), FILEDATA(pino), PTSIZE);
-
+  if(child_changed && parent_changed) {
+    // Conflict! Mark files as such
+    pfi->mode |= S_IFCONF;
+    cfi->mode |= S_IFCONF;
     return true;
-  } else if(!child_changed && parent_changed) {
-    // Update versions
-    cfi->rver = pfi->rver = pfi->ver;
-    cfi->rlen = pfi->rlen = pfi->size;
-    cfi->rino = pfi->rino = pfi->rino;
+  }
+  if(!child_changed && parent_changed) {
+    // Update the child version
+    cfi->rver = pfi->ver;
+    cfi->rlen = pfi->size;
+
+    // Only works with this commented...
+    // cfi->rino = pfi->rino = pfi->rino;
     // Update child metadata
     cfi->dino = pfi->dino;
     cfi->ver  = pfi->ver;
@@ -330,12 +320,25 @@ reconcile_inode(pid_t pid, filestate *cfiles, int pino, int cino)
     sys_put(SYS_COPY, pid, NULL, FILEDATA(pino), FILEDATA(cino), PTSIZE);
 
     return true;
-  } else {
-    // Conflict! Mark files as such
-    pfi->mode |= S_IFCONF;
-    cfi->mode |= S_IFCONF;
   }
+  if (child_changed && !parent_changed) {
+    // Update the child version
+    cfi->rver = pfi->ver;
+    cfi->rlen = pfi->size;
+    // Only works with this commented...
+    // cfi->rino = pfi->rino = cfi->rino;
+    // Update parent meta data
+    pfi->dino = cfi->dino;
+    pfi->ver  = cfi->ver;
+    strcpy(pfi->de.d_name, cfi->de.d_name);
+    pfi->mode = cfi->mode;
+    pfi->size = cfi->size;
+    // Copy physical file from child to parent (we have to copy entire page)
+    sys_get(SYS_COPY, pid, NULL, FILEDATA(cino), FILEDATA(pino), PTSIZE);
 
+    return true;
+  }
+  // No changes...
   return false;
 }
 
@@ -351,7 +354,7 @@ reconcile_merge(pid_t pid, filestate *cfiles, int pino, int cino)
 
   if (!S_ISREG(pfi->mode))
     return 0; // only regular files have data to merge
-
+  
   // Rafi
   int rlen = cfi->rlen;
   assert(cfi->size > rlen || pfi->size > rlen);
@@ -365,18 +368,16 @@ reconcile_merge(pid_t pid, filestate *cfiles, int pino, int cino)
   // We'll use the scratch space, but since cfiles is stored at
   // VM_SCRATCHLO (and it's a page big), we'll start at VM_SCRATCHLO+PTSIZE
   int child_loc = VM_SCRATCHLO+PTSIZE;
+  int parent_loc = (int)FILEDATA(pino);
   sys_get(SYS_COPY, pid, NULL, FILEDATA(cino), (void*)child_loc, PTSIZE);
 
   // cprintf("merge: cdif: %d, pdif: %d, csize: %d, psize: %d\n",
   //  cdif, pdif, cfi->size, pfi->size);
   void *cend = (void*)(child_loc + cfi->size);  // end of child in parent's memory
-  void *pend = (void*)((int)FILEDATA(pino) + pfi->size);
+  void *pend = (void*)(parent_loc + pfi->size); // end of parent
 
-  char *p_str = (char *)(pend-pdif);
-  char *c_str = (char *)(cend-cdif);
-
-  if(cfi->size + pdif < FILE_MAXSIZE) {
-    memcpy(pend, cend-cdif, cdif);                // From last checkpointed end
+  if(cfi->size + pdif <= FILE_MAXSIZE) {
+    memcpy(pend, cend-cdif, cdif);              // From last checkpointed end
     memcpy(cend, pend-pdif, pdif);
   } else {
     warn("reconcile_merge: merged files are too big...cancelling merge\n");

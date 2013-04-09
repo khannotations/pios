@@ -91,7 +91,7 @@ fileino_read(int ino, off_t ofs, void *buf, size_t eltsize, size_t count)
 	fileinode *fi = &files->fi[ino];
 	assert(fi->size <= FILE_MAXSIZE);
 
-	// If nothing to read or reading past end of file, return 0
+	// If nothing to read return 0
 	if(count == 0) {
 		return 0;
 	}

@@ -175,7 +175,7 @@ cons_io(void)
 	// Input file
 	fi = &files->fi[FILEINO_CONSIN];
 	// Read from console
-	while(fi->size < FILE_MAXSIZE && (c = cons_getc())) {
+	while(fi->size <= FILE_MAXSIZE && (c = cons_getc())) {
 		// And appened to CONSIN
 		((char*)FILEDATA(FILEINO_CONSIN))[fi->size++] = c;
 		num_io++;

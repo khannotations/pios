@@ -118,6 +118,7 @@ do_put(trapframe *tf, uint32_t cmd)
   
   spinlock_release(&curr->lock);
 
+  // cprintf("do_put: current proc: %p, cpu_cur proc: %p\n", curr, cpu_cur()->proc);
 	if(cmd & SYS_REGS) {
 		usercopy(tf, 0, &child->sv, tf->regs.ebx, sizeof(procstate));
     child->sv.tf.ds = CPU_GDT_UDATA | 3;
@@ -176,7 +177,7 @@ do_get(trapframe *tf, uint32_t cmd)
 		proc_wait(curr, child, tf);
 
     spinlock_release(&curr->lock);
-
+    // cprintf("do_get: current proc: %p, cpu_cur proc: %p\n", curr, cpu_cur()->proc);
     uint32_t dest = tf->regs.edi; //syscall.h
     uint32_t size = tf->regs.ecx;
     uint32_t src = tf->regs.esi;

@@ -186,16 +186,11 @@ trap(trapframe *tf)
       // cprintf("Keyboard interrupt\n");
       kbd_intr();
       lapic_eoi();
-      // if(!tf->cs & 3) {
-      //   proc_yield(tf);
-      // }
       trap_return(tf);
     case T_IRQ0+IRQ_SERIAL:
       // cprintf("Serial interrupt\n");
       lapic_eoi();
       serial_intr();
-      // if(!tf->cs & 3)
-      //   proc_yield(tf);
       trap_return(tf);
     case T_IRQ0+IRQ_SPURIOUS:
       cprintf("Spurious Interrupt. That's weird.\n");
