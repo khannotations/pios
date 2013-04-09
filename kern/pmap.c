@@ -179,8 +179,8 @@ pmap_walk(pde_t *pdir, uint32_t va, bool writing)
           tmp[ind] = tmp[ind] & ~PTE_W;
       } else {
         // Ref count decrement bc no longer shared
-        mem_decref(mem_ptr2pi(tmp), pmap_freeptab);
         pageinfo *p = mem_alloc();
+        mem_incref(p);
         pte_t *new = mem_pi2ptr(p);
         int k;
         for(k = 0; k < 1024; k++) {
@@ -188,7 +188,7 @@ pmap_walk(pde_t *pdir, uint32_t va, bool writing)
           if(PGADDR(tmp[k]) != PTE_ZERO)
             mem_incref(mem_phys2pi(PGADDR(tmp[k])));
         }
-        mem_incref(p);
+        mem_decref(mem_ptr2pi(tmp), pmap_freeptab);
         tmp = new;
       }
     }
