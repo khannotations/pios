@@ -40,17 +40,51 @@
 	pushl $(num);							\
 	jmp _alltraps
 
-.text
 
-/*
- * Lab 1: Your code here for generating entry points for the different traps.
- */
+TRAPHANDLER_NOEC(tdivide, T_DIVIDE)
+TRAPHANDLER_NOEC(tdebug, T_DEBUG)
+TRAPHANDLER_NOEC(tnmi, T_NMI)
+TRAPHANDLER_NOEC(tbrkpt, T_BRKPT)
+TRAPHANDLER_NOEC(toflow, T_OFLOW)
+TRAPHANDLER_NOEC(tbound, T_BOUND)
+TRAPHANDLER_NOEC(tillop, T_ILLOP)
+TRAPHANDLER_NOEC(tdevice, T_DEVICE)
+TRAPHANDLER     (tdblflt, T_DBLFLT)
+TRAPHANDLER     (ttss, T_TSS)
+TRAPHANDLER     (tsegnp, T_SEGNP)
+TRAPHANDLER     (tstack, T_STACK)
+TRAPHANDLER     (tgpflt, T_GPFLT)
+TRAPHANDLER     (tpgflt, T_PGFLT)
+TRAPHANDLER_NOEC(tfperr, T_FPERR)
+TRAPHANDLER     (talign, T_ALIGN)
+TRAPHANDLER_NOEC(tmchk, T_MCHK)
+TRAPHANDLER_NOEC(tsimd, T_SIMD)
+TRAPHANDLER_NOEC(tsecev, T_SECEV)
+TRAPHANDLER_NOEC(tirq0, T_IRQ0)
+TRAPHANDLER_NOEC(tirqkbd, (T_IRQ0+IRQ_KBD))
+TRAPHANDLER_NOEC(tirqser, (T_IRQ0+IRQ_SERIAL))
+TRAPHANDLER_NOEC(tsystem, T_SYSCALL)
+TRAPHANDLER_NOEC(tltimer, T_LTIMER)
 
 /*
  * Lab 1: Your code here for _alltraps
  */
+.text
+.globl _alltraps
+.type _alltraps,@function
+_alltraps:
+    pushl %ds
+    pushl %es
+    pushl %fs
+    pushl %gs
+    pushal
 
-
+    movw $CPU_GDT_KDATA, %ax
+    movw %ax, %ds
+    movw %ax, %es
+  
+    pushl %esp
+    call trap
 
 //
 // Trap return code.
@@ -66,8 +100,14 @@
 .type	trap_return,@function
 .p2align 4, 0x90		/* 16-byte alignment, nop filled */
 trap_return:
-/*
- * Lab 1: Your code here for trap_return
- */
+  movl	4(%esp),%esp // Point esp to the trapframe *
+  popal
+  popl %gs
+  popl %fs
+  popl %es
+  popl %ds
+  addl $8, %esp 
+  iret
+
 1:	jmp	1b		// just spin
 

@@ -91,10 +91,32 @@ fileino_read(int ino, off_t ofs, void *buf, size_t eltsize, size_t count)
 	fileinode *fi = &files->fi[ino];
 	assert(fi->size <= FILE_MAXSIZE);
 
-	// Lab 4: insert your file reading code here.
-	warn("fileino_read() not implemented");
-	errno = EINVAL;
-	return -1;
+	// If nothing to read return 0
+	if(count == 0) {
+		return 0;
+	}
+	// Reading past end of file
+	while(ofs >= fi->size) {
+		if(fi->mode & S_IFPART) {
+			// Part file: wait for input
+			sys_ret();
+		} else {
+			// Not a part file, empty read.
+			return 0;
+		}
+	}
+
+	// Get start pointer
+	void *place = FILEDATA(ino) + ofs;
+	int bytes_left = fi->size - ofs;
+	int bytes_to_read = eltsize*count;
+
+	// Find the limiting factor: file size or things to read
+	int limit = bytes_to_read < bytes_left ? bytes_to_read : bytes_left;
+	// Copy data over
+	memcpy(buf, place, limit);
+	// cprintf("fileino_read: limit: %d, read: %d", limit, limit/eltsize);
+	return limit/eltsize;
 }
 
 // Write 'count' data elements each of size 'eltsize'
@@ -117,8 +139,26 @@ fileino_write(int ino, off_t ofs, const void *buf, size_t eltsize, size_t count)
 	fileinode *fi = &files->fi[ino];
 	assert(fi->size <= FILE_MAXSIZE);
 
-	// Lab 4: insert your file writing code here.
-	warn("fileino_write() not implemented");
+	// Rafi's asserts
+	int bytes_to_write = eltsize * count;
+	// Check that the file isn't getting too big
+	if(ofs + bytes_to_write > FILE_MAXSIZE || ofs > fi->size) {
+		errno = EFBIG;
+		return -1;
+	}
+
+	void *place = FILEDATA(ino) + ofs;
+	// Manage permissions
+	sys_get(SYS_PERM | SYS_READ | SYS_WRITE, 0, NULL, NULL,
+			ROUNDDOWN(place, PTSIZE), ROUNDUP(bytes_to_write, PTSIZE));
+	// Copy data over, this time from the buffer into the file.
+	memcpy(place, buf, bytes_to_write);
+	// Set the new filesize if it's bigger
+	if(fi->size < ofs + bytes_to_write)
+		fi->size = ofs + bytes_to_write;
+	return count;
+
+	// Unused...
 	errno = EINVAL;
 	return -1;
 }
@@ -330,10 +370,22 @@ off_t filedesc_seek(filedesc *fd, off_t offset, int whence)
 	assert(whence == SEEK_SET || whence == SEEK_CUR || whence == SEEK_END);
 	fileinode *fi = &files->fi[fd->ino];
 
-	// Lab 4: insert your file descriptor seek implementation here.
-	warn("filedesc_seek() not implemented");
-	errno = EINVAL;
-	return -1;
+	switch(whence) {
+		case SEEK_SET:
+			fd->ofs = offset;
+			break;
+		case SEEK_CUR:
+			fd->ofs += offset;
+			break;
+		case SEEK_END:
+			fd->ofs = fi->size + offset;
+			break;
+	}
+	if(fd->ofs < 0) {
+		errno = EINVAL;
+		return -1;
+	}
+	return fd->ofs;
 }
 
 void

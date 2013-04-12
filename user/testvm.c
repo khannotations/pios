@@ -162,9 +162,11 @@ void
 forkcheck()
 {
 	// Our first copy-on-write test: fork and execute a simple child.
-	if (!fork(SYS_START, 0)) gentrap(T_SYSCALL);
-	join(0, 0, T_SYSCALL);
+	if (!fork(SYS_START, 0)) {
+		gentrap(T_SYSCALL);
+	}
 
+	join(0, 0, T_SYSCALL);
 	// Re-check trap handling and reflection from child processes
 	trapcheck(T_DIVIDE);
 	trapcheck(T_BRKPT);
@@ -172,7 +174,6 @@ forkcheck()
 	trapcheck(T_BOUND);
 	trapcheck(T_ILLOP);
 	trapcheck(T_GPFLT);
-
 	// Make sure we can run several children using the same stack area
 	// (since each child should get a separate logical copy)
 	if (!fork(SYS_START, 0)) gentrap(T_SYSCALL);
@@ -217,7 +218,6 @@ protcheck()
 	getfaulttest(VM_USERLO-1);
 	getfaulttest(VM_USERHI);
 	getfaulttest(~0);
-
 warn("here");
 	// Check that unused parts of user space are also inaccessible
 	readfaulttest(VM_USERLO+PTSIZE);
@@ -272,7 +272,7 @@ memopcheck(void)
 	assert(*(volatile int*)va == 0xdeadbeef);	// readable again
 	writefaulttest(va);				// but not writable
 	sys_get(SYS_PERM | SYS_READ | SYS_WRITE, 0, NULL, NULL, va, PAGESIZE);
-
+	
 	// Test SYS_ZERO with SYS_GET
 	va = (void*)VM_USERLO+PTSIZE;	// 4MB-aligned
 	sys_get(SYS_ZERO, 0, NULL, NULL, va, PTSIZE);

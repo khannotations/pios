@@ -28,7 +28,8 @@ size_t mem_npage;		// Total number of physical memory pages
 pageinfo *mem_pageinfo;		// Metadata array indexed by page number
 
 pageinfo *mem_freelist;		// Start of free page list
-
+spinlock _freelist_lock;
+spinlock mem_freelock;
 
 void mem_check(void);
 
@@ -82,21 +83,25 @@ mem_init(void)
 	//     Hint: the linker places the kernel (see start and end above),
 	//     but YOU decide where to place the pageinfo array.
 	// Change the code to reflect this.
+    spinlock_init(&_freelist_lock);
+    pageinfo *mem_pageinfo = (pageinfo*)ROUNDUP((uint32_t)end, (uint32_t)sizeof(pageinfo));
 	pageinfo **freetail = &mem_freelist;
 	int i;
 	for (i = 0; i < mem_npage; i++) {
-		// A free page has no references to it.
-		mem_pageinfo[i].refcount = 0;
-
-		// Add the page to the end of the free list.
-		*freetail = &mem_pageinfo[i];
-		freetail = &mem_pageinfo[i].free_next;
+		if(i != 0 && i != 1) {              // Pages 0 and 1 are reserved.
+      // All of base memory otherwise is free after the kernel
+      // and the pageinfo table all memory should be free
+      if(i < basemem/4096 ||          
+        i >= (uint32_t)(ROUNDUP(&mem_pageinfo[mem_npage],4096))/4096) {
+        // A free page has no references to it.
+        mem_pageinfo[i].refcount = 0;
+        // Add the page to the end of the free list.
+        *freetail = &mem_pageinfo[i];
+        freetail = &mem_pageinfo[i].free_next;
+      }
+    }
 	}
 	*freetail = NULL;	// null-terminate the freelist
-
-	// ...and remove this when you're ready.
-	panic("mem_init() not implemented");
-
 	// Check to make sure the page allocator seems to work correctly.
 	mem_check();
 }
@@ -115,9 +120,12 @@ mem_init(void)
 pageinfo *
 mem_alloc(void)
 {
-	// Fill this function in
-	// Fill this function in.
-	panic("mem_alloc not implemented.");
+  spinlock_acquire(&_freelist_lock);
+	pageinfo *p = mem_freelist;
+	if(p != NULL)
+		mem_freelist = p->free_next;	// Remove page from free list
+  spinlock_release(&_freelist_lock);
+  return p;
 }
 
 //
@@ -127,8 +135,10 @@ mem_alloc(void)
 void
 mem_free(pageinfo *pi)
 {
-	// Fill this function in.
-	panic("mem_free not implemented.");
+  spinlock_acquire(&_freelist_lock);
+  pi->free_next = mem_freelist;
+  mem_freelist = pi;
+  spinlock_release(&_freelist_lock);
 }
 
 // When we receive a copy of a page or kernel object from a remote node,
@@ -213,9 +223,9 @@ mem_check()
 	pageinfo *fl;
 	int i;
 
-        // if there's a page that shouldn't be on
-        // the free list, try to make sure it
-        // eventually causes trouble.
+  // if there's a page that shouldn't be on
+  // the free list, try to make sure it
+  // eventually causes trouble.
 	int freepages = 0;
 	for (pp = mem_freelist; pp != 0; pp = pp->free_next) {
 		memset(mem_pi2ptr(pp), 0x97, 128);
@@ -234,9 +244,9 @@ mem_check()
 	assert(pp0);
 	assert(pp1 && pp1 != pp0);
 	assert(pp2 && pp2 != pp1 && pp2 != pp0);
-        assert(mem_pi2phys(pp0) < mem_npage*PAGESIZE);
-        assert(mem_pi2phys(pp1) < mem_npage*PAGESIZE);
-        assert(mem_pi2phys(pp2) < mem_npage*PAGESIZE);
+  assert(mem_pi2phys(pp0) < mem_npage*PAGESIZE);
+  assert(mem_pi2phys(pp1) < mem_npage*PAGESIZE);
+  assert(mem_pi2phys(pp2) < mem_npage*PAGESIZE);
 
 	// temporarily steal the rest of the free pages
 	fl = mem_freelist;
@@ -245,10 +255,10 @@ mem_check()
 	// should be no free memory
 	assert(mem_alloc() == 0);
 
-        // free and re-allocate?
-        mem_free(pp0);
-        mem_free(pp1);
-        mem_free(pp2);
+  // free and re-allocate?
+  mem_free(pp0);
+  mem_free(pp1);
+  mem_free(pp2);
 	pp0 = pp1 = pp2 = 0;
 	pp0 = mem_alloc(); assert(pp0 != 0);
 	pp1 = mem_alloc(); assert(pp1 != 0);

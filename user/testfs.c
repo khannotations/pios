@@ -167,7 +167,6 @@ seekcheck()
 	rc = lseek(fd, 0, SEEK_END); assert(rc == st.st_size);
 	rc = lseek(fd, -1024, SEEK_END); assert(rc == st.st_size-1024);
 	rc = lseek(fd, 12345, SEEK_END); assert(rc == st.st_size+12345);
-
 	// Read some blocks sequentially from the beginning of the file,
 	// and compare against what we get if we directly seek to a block
 	rc = lseek(fd, -st.st_size, SEEK_END); assert(rc == 0);
@@ -317,6 +316,7 @@ consoutcheck()
 	fclose(f);
 
 	cprintf("Buffered console output should NOT have appeared yet\n");
+	// proc *p = proc_cur();
 	sys_ret();	// Synchronize with the kernel, deliver console output
 	cprintf("Buffered console output SHOULD have appeared now\n");
 

@@ -153,7 +153,13 @@ struct dirent *readdir(DIR *dir)
 	// Hint: a fileinode's 'dino' field indicates
 	// what directory the file is in;
 	// this function shouldn't return entries from other directories!
-	warn("readdir() not implemented");
+	while(dir->ofs < FILE_INODES) {
+		fileinode *fi = &files->fi[dir->ofs];
+		// Update offset before returning
+		dir->ofs++;
+		if(fi->dino == dir->ino)
+			return &fi->de;
+	}
 	return NULL;
 }
 
@@ -171,5 +177,3 @@ long telldir(DIR *dir)
 {
 	return dir->ofs;
 }
-
-
