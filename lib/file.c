@@ -99,7 +99,6 @@ fileino_read(int ino, off_t ofs, void *buf, size_t eltsize, size_t count)
 	while(ofs >= fi->size) {
 		if(fi->mode & S_IFPART) {
 			// Part file: wait for input
-			// cprintf("fileino_read: waiting for fd %d: size=ofs=%d\n", ino, fi->size);	
 			sys_ret();
 		} else {
 			// Not a part file, empty read.
