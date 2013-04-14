@@ -205,13 +205,13 @@ net_migrate(trapframe *tf, uint8_t dstnode, int entry)
 		// Now net_migrtail->migrnext is NULL, so make it p
 		net_migrpoint->migrnext = p;
 	}
-	cprintf("net_migrate: added proc. list is now ");
+	cprintf("net_migrate: added proc. migrlist is now ");
 	proc *np = net_migrlist;
 	while(np) {
 		cprintf("%p->", np);
 		np = np->migrnext;
 	}
-	cprintf("|\n");
+	cprintf("END\n");
 	// Send request
 	net_txmigrq(p);
 	spinlock_release(&net_lock);
