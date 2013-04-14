@@ -19,8 +19,8 @@
 
 
 // Flag to do "lspci" at bootup
-static int pci_show_devs = 0;
-static int pci_show_addrs = 0;
+static int pci_show_devs = 1;
+static int pci_show_addrs = 1;
 
 // PCI "configuration mechanism one"
 static uint32_t pci_conf1_addr_ioport = 0x0cf8;
@@ -76,7 +76,7 @@ pci_conf_write(struct pci_func *f, uint32_t off, uint32_t v)
 	outl(pci_conf1_data_ioport, v);
 }
 
-static int __attribute__((warn_unused_result))
+static int // __attribute__((warn_unused_result))
 pci_attach_match(uint32_t key1, uint32_t key2,
 		 struct pci_driver *list, struct pci_func *pcif)
 {

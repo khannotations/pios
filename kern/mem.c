@@ -61,44 +61,21 @@ mem_init(void)
 	cprintf("base = %dK, extended = %dK\n",
 		(int)(basemem/1024), (int)(extmem/1024));
 
-
-	// Insert code here to:
-	// (1)	allocate physical memory for the mem_pageinfo array,
-	//	making it big enough to hold mem_npage entries.
-	// (2)	add all pageinfo structs in the array representing
-	//	available memory that is not in use for other purposes.
-	//
-	// For step (2), here is some incomplete/incorrect example code
-	// that simply marks all mem_npage pages as free.
-	// Which memory is actually free?
-	//  1) Reserve page 0 for the real-mode IDT and BIOS structures
-	//     (do not allow this page to be used for anything else).
-	//  2) Reserve page 1 for the AP bootstrap code (boot/bootother.S).
-	//  3) Mark the rest of base memory as free.
-	//  4) Then comes the IO hole [MEM_IO, MEM_EXT).
-	//     Mark it as in-use so that it can never be allocated.      
-	//  5) Then extended memory [MEM_EXT, ...).
-	//     Some of it is in use, some is free.
-	//     Which pages hold the kernel and the pageinfo array?
-	//     Hint: the linker places the kernel (see start and end above),
-	//     but YOU decide where to place the pageinfo array.
-	// Change the code to reflect this.
-    spinlock_init(&_freelist_lock);
-    pageinfo *mem_pageinfo = (pageinfo*)ROUNDUP((uint32_t)end, (uint32_t)sizeof(pageinfo));
+  spinlock_init(&_freelist_lock);
+  pageinfo *mem_pageinfo = (pageinfo*)ROUNDUP((uint32_t)end, (uint32_t)sizeof(pageinfo));
 	pageinfo **freetail = &mem_freelist;
 	int i;
-	for (i = 0; i < mem_npage; i++) {
-		if(i != 0 && i != 1) {              // Pages 0 and 1 are reserved.
-      // All of base memory otherwise is free after the kernel
-      // and the pageinfo table all memory should be free
-      if(i < basemem/4096 ||          
-        i >= (uint32_t)(ROUNDUP(&mem_pageinfo[mem_npage],4096))/4096) {
-        // A free page has no references to it.
-        mem_pageinfo[i].refcount = 0;
-        // Add the page to the end of the free list.
-        *freetail = &mem_pageinfo[i];
-        freetail = &mem_pageinfo[i].free_next;
-      }
+	// Pages 0 and 1 are reserved.
+	for (i = 2; i < mem_npage; i++) {           
+    // All of base memory otherwise is free after the kernel
+    // and the pageinfo table all memory should be free
+    if(i < basemem/4096 ||          
+      i >= (uint32_t)(ROUNDUP(&mem_pageinfo[mem_npage],4096))/4096) {
+      // A free page has no references to it.
+      mem_pageinfo[i].refcount = 0;
+      // Add the page to the end of the free list.
+      *freetail = &mem_pageinfo[i];
+      freetail = &mem_pageinfo[i].free_next;
     }
 	}
 	*freetail = NULL;	// null-terminate the freelist
@@ -124,6 +101,8 @@ mem_alloc(void)
 	pageinfo *p = mem_freelist;
 	if(p != NULL)
 		mem_freelist = p->free_next;	// Remove page from free list
+	p->home = 0;
+	p->shared = 0;
   spinlock_release(&_freelist_lock);
   return p;
 }

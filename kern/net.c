@@ -106,8 +106,23 @@ net_rx(void *pkt, int len)
 		return;	// drop
 	}
 
-	// Lab 5: your code here to process received messages.
-	warn("net_rx: received a message; now what?");
+	// Process received packet
+	switch(h->type) {
+		// Migrate request
+		case NET_MIGRQ:
+			cprintf("node %d: received migr request\n", net_node);
+			net_rxmigrq((net_migrq*)h);
+			break;
+		// Migrate reply
+		case NET_MIGRP:
+			cprintf("node %d: received migr reply\n", net_node);
+			net_rxmigrp((net_migrp*)h);
+			break;
+		case NET_PULLRQ:		// Page pull request
+		case NET_PULLRP:		// Page pull reply
+		default:
+			warn("net_rx: invalid packet type\n");
+	}
 }
 
 // Called by trap() on every timer interrupt,
@@ -124,8 +139,15 @@ net_tick()
 
 	spinlock_acquire(&net_lock);
 
-	// Lab 5: your code here.
-	warn("net_tick() should probably be doing something.");
+	proc *net_migrpoint;
+	// cprintf("Starting net_tick\n");
+	for(net_migrpoint = net_migrlist; net_migrpoint; 
+		net_migrpoint = net_migrpoint->migrnext) {
+		// Resend packets
+		cprintf("Resending %p |", net_migrpoint);
+		net_txmigrq(net_migrpoint);
+	}
+	// cprintf("\n\n\n");
 
 	spinlock_release(&net_lock);
 }
@@ -155,6 +177,7 @@ net_migrate(trapframe *tf, uint8_t dstnode, int entry)
 	proc_save(p, tf, entry);	// save current process's state
 
 	assert(dstnode > 0 && dstnode <= NET_MAXNODES && dstnode != net_node);
+	assert(spinlock_holding(&p->lock));
 	//cprintf("proc %x at eip %x migrating to node %d\n",
 	//	p, p->tf.eip, dstnode);
 
@@ -163,10 +186,38 @@ net_migrate(trapframe *tf, uint8_t dstnode, int entry)
 	// (In the case of a proc it won't anyway, but just for consistency.)
 	net_rrshare(p, dstnode);
 
-	// Lab 5: insert your code here to place process in PROC_MIGR state,
-	// add it to the list of migrating processes (net_migrlist),
-	// and call net_txmigrq() to send out a migrate request packet.
-	panic("net_migrate not implemented");
+	// spinlock_acquire(&p->lock); (should be holding already)
+	p->state = PROC_MIGR;
+	assert(p->migrnext == NULL); 	// Is this true?
+	p->migrnext = NULL;						// In case it's not...
+	p->migrdest = dstnode;
+	// spinlock_release(&p->lock);
+
+	spinlock_acquire(&net_lock);
+	// If the list is empty, add p to the front
+	if(!net_migrlist) {
+		net_migrlist = p;
+	} else {
+		// Otherwise, go to the end of the list
+		proc *net_migrpoint = net_migrlist;
+		while(net_migrpoint->migrnext)
+			net_migrpoint = net_migrpoint->migrnext;
+		// Now net_migrtail->migrnext is NULL, so make it p
+		net_migrpoint->migrnext = p;
+	}
+	cprintf("net_migrate: added proc. list is now ");
+	proc *np = net_migrlist;
+	while(np) {
+		cprintf("%p->", np);
+		np = np->migrnext;
+	}
+	cprintf("|\n");
+	// Send request
+	net_txmigrq(p);
+	spinlock_release(&net_lock);
+	// How do we return..?
+	// Do something else now
+	proc_sched();
 }
 
 // Transmit a process migration request message
@@ -180,9 +231,16 @@ net_txmigrq(proc *p)
 	assert(p->state == PROC_MIGR);
 	assert(spinlock_holding(&net_lock));
 
-	// Lab 5: insert code to create and send out a migrate request
-	// for a process waiting to migrate (in the PROC_MIGR state).
-	warn("net_txmigrq not implemented");
+	// Make request from scratch
+	net_migrq *rq;
+	net_ethsetup(&rq->eth, p->migrdest);
+	rq->type = NET_MIGRQ;													// As per net.h
+	rq->home = RRCONS(net_node, mem_phys(p), 0); 	// Just like in proc_alloc
+	rq->pdir = RRCONS(net_node, mem_phys(p->pdir), 0);
+	rq->save = p->sv;
+	// Send (No body)
+	cprintf("node %d: sending migr req\n", net_node);
+	net_tx(rq, sizeof(*rq), 0, 0);
 }
 
 // This gets called by net_rx() to process a received migrq packet.
@@ -238,8 +296,14 @@ void net_rxmigrq(net_migrq *migrq)
 void
 net_txmigrp(uint8_t dstnode, uint32_t prochome)
 {
+	net_migrp *rp;
+	net_ethsetup(&rp->eth, dstnode);
+	rp->type = NET_MIGRP;
+	rp->home = prochome;
+	cprintf("node %d: sending migr reply\n", net_node);
+	net_tx(rp, sizeof(*rp), 0, 0);
 	// Lab 5: insert code to create and send out a migrate reply.
-	warn("net_txmigrp not implemented");
+	// warn("net_txmigrp not implemented");
 }
 
 // Receive a migrate reply message.
@@ -247,13 +311,42 @@ void net_rxmigrp(net_migrp *migrp)
 {
 	uint8_t msgsrcnode = migrp->eth.src[5];
 	assert(msgsrcnode > 0 && msgsrcnode <= NET_MAXNODES);
+	proc *the_one = NULL;
 
-	// Lab 5: insert code to process a migrate reply message.
-	// Look for the appropriate migrating proc in the migrlist,
-	// and if it's there, remove it and mark it PROC_AWAY.
-	// Remember that duplicate packets can arrive due to retransmissions:
-	// nothing bad should happen if there's no such proc in the migrlist.
-	warn("net_rxmigrp not implemented");
+	spinlock_acquire(&net_lock);
+	// First node is the one!
+	if(net_migrlist && net_migrlist->home == migrp->home) {
+		the_one = net_migrlist;
+		// Move the migrlist head
+		net_migrlist = net_migrlist->migrnext;
+	} else {
+		// Scan through the list for it
+		proc *net_migrpoint = net_migrlist;
+		while(net_migrpoint) {
+			// Found it
+			if(net_migrpoint->migrnext->home == migrp->home) {
+				the_one = net_migrpoint->migrnext;
+				// Point this migrnext to the one after the_one
+				net_migrpoint->migrnext = the_one->migrnext;
+				// Finish
+				break;
+			}
+			net_migrpoint = net_migrpoint->migrnext;
+		}
+	}
+	spinlock_release(&net_lock);
+	// If we didn't find it, nothing to do...
+	if(!the_one)
+		return;
+
+	// Nothing should be able to change this process while it's away,
+	// until it returns.
+	assert(spinlock_holding(&the_one->lock));
+	// Mark the process correctly
+	// spinlock_acquire(&the_one->lock);
+	the_one->migrnext = NULL;
+	the_one->state = PROC_AWAY;
+	// spinlock_release(&the_one->lock);
 }
 
 // Pull a page via a remote ref and put process p to sleep waiting for it.

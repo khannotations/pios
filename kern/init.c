@@ -42,7 +42,6 @@ static char gcc_aligned(16) user_stack[PAGESIZE];
 #endif
 extern char ROOTEXE_START[];
 
-
 // Called first from entry.S on the bootstrap processor,
 // and later from boot/bootother.S on all other processors.
 // As a rule, "init" functions in PIOS are called once on EACH processor.
@@ -93,8 +92,8 @@ init(void)
 
 	// Initialize the I/O system.
 	file_init();		// Create root directory and console I/O files
-	pci_init();		// Initialize the PCI bus and network card
-	net_init();		
+	pci_init();		  // Initialize the PCI bus and network card
+	net_init();
 
 	// Lab 4: uncomment this when you can handle IRQ_SERIAL and IRQ_KBD.
 	cons_intenable();	// Let the console start producing interrupts

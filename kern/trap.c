@@ -43,39 +43,56 @@ trap_init_idt(void)
 {
 	extern segdesc gdt[];
     
-    // All the trap handlers.
-    extern char tdivide, tdebug, tnmi, tbrkpt, toflow, tbound, tillop, 
-                tdivide, tdblflt, ttss, tsegnp, tstack, tgpflt, tpgflt, 
-                tfperr, talign, tmchk, tsimd, tsecev, tirq0, tirqkbd, tirqser,
-                tsystem, tltimer;
-        
-    SETGATE(idt[T_DIVIDE], 0, CPU_GDT_KCODE, &tdivide, 0);
-    SETGATE(idt[T_DEBUG], 0, CPU_GDT_KCODE, &tdebug, 0);
-    SETGATE(idt[T_NMI], 0, CPU_GDT_KCODE, &tnmi, 0);
-    SETGATE(idt[T_BRKPT], 0, CPU_GDT_KCODE, &tbrkpt, 3);
-    SETGATE(idt[T_OFLOW], 0, CPU_GDT_KCODE, &toflow, 3);
-    SETGATE(idt[T_BOUND], 0, CPU_GDT_KCODE, &tbound, 0);
-    SETGATE(idt[T_ILLOP], 0, CPU_GDT_KCODE, &tillop, 0);
-    SETGATE(idt[T_DEVICE], 0, CPU_GDT_KCODE, &tdivide, 0);
-    SETGATE(idt[T_DBLFLT], 0, CPU_GDT_KCODE, &tdblflt, 0);
-    SETGATE(idt[T_TSS], 0, CPU_GDT_KCODE, &ttss, 0);
-    SETGATE(idt[T_SEGNP], 0, CPU_GDT_KCODE, &tsegnp, 0);
-    SETGATE(idt[T_STACK], 0, CPU_GDT_KCODE, &tstack, 0);
-    SETGATE(idt[T_GPFLT], 0, CPU_GDT_KCODE, &tgpflt, 0);
-    SETGATE(idt[T_PGFLT], 0, CPU_GDT_KCODE, &tpgflt, 0);
-    SETGATE(idt[T_FPERR], 0, CPU_GDT_KCODE, &tfperr, 0);
-    SETGATE(idt[T_ALIGN], 0, CPU_GDT_KCODE, &talign, 0);
-    SETGATE(idt[T_MCHK], 0, CPU_GDT_KCODE, &tmchk, 0);
-    SETGATE(idt[T_SIMD], 0, CPU_GDT_KCODE, &tsimd, 0);
-    SETGATE(idt[T_SECEV], 0, CPU_GDT_KCODE, &tsecev, 0);
+  // All the trap handlers.
+  extern char tdivide, tdebug, tnmi, tbrkpt, toflow, tbound, tillop, 
+              tdivide, tdblflt, ttss, tsegnp, tstack, tgpflt, tpgflt, 
+              tfperr, talign, tmchk, tsimd, tsecev,
+              tirq0, tirqspur, tirqkbd, tirqser, tirq2, tirq3, 
+              tirq5, tirq6, tirq8, tirq9, tirq10, tirq11, tirq12, 
+              tirq13, tirq14, tirq15,
+              tsystem, tltimer;
+      
+  SETGATE(idt[T_DIVIDE], 0, CPU_GDT_KCODE, &tdivide, 0);
+  SETGATE(idt[T_DEBUG], 0, CPU_GDT_KCODE, &tdebug, 0);
+  SETGATE(idt[T_NMI], 0, CPU_GDT_KCODE, &tnmi, 0);
+  SETGATE(idt[T_BRKPT], 0, CPU_GDT_KCODE, &tbrkpt, 3);
+  SETGATE(idt[T_OFLOW], 0, CPU_GDT_KCODE, &toflow, 3);
+  SETGATE(idt[T_BOUND], 0, CPU_GDT_KCODE, &tbound, 0);
+  SETGATE(idt[T_ILLOP], 0, CPU_GDT_KCODE, &tillop, 0);
+  SETGATE(idt[T_DEVICE], 0, CPU_GDT_KCODE, &tdivide, 0);
+  SETGATE(idt[T_DBLFLT], 0, CPU_GDT_KCODE, &tdblflt, 0);
+  SETGATE(idt[T_TSS], 0, CPU_GDT_KCODE, &ttss, 0);
+  SETGATE(idt[T_SEGNP], 0, CPU_GDT_KCODE, &tsegnp, 0);
+  SETGATE(idt[T_STACK], 0, CPU_GDT_KCODE, &tstack, 0);
+  SETGATE(idt[T_GPFLT], 0, CPU_GDT_KCODE, &tgpflt, 0);
+  SETGATE(idt[T_PGFLT], 0, CPU_GDT_KCODE, &tpgflt, 0);
+  SETGATE(idt[T_FPERR], 0, CPU_GDT_KCODE, &tfperr, 0);
+  SETGATE(idt[T_ALIGN], 0, CPU_GDT_KCODE, &talign, 0);
+  SETGATE(idt[T_MCHK], 0, CPU_GDT_KCODE, &tmchk, 0);
+  SETGATE(idt[T_SIMD], 0, CPU_GDT_KCODE, &tsimd, 0);
+  SETGATE(idt[T_SECEV], 0, CPU_GDT_KCODE, &tsecev, 0);
 
-    // IRQ
-    SETGATE(idt[T_IRQ0], 0, CPU_GDT_KCODE, &tirq0, 0);
-    SETGATE(idt[T_IRQ0+IRQ_KBD], 0, CPU_GDT_KCODE, &tirqkbd, 0);
-    SETGATE(idt[T_IRQ0+IRQ_SERIAL], 0, CPU_GDT_KCODE, &tirqser, 0);
+  // IRQ = 32
+  SETGATE(idt[T_IRQ0], 0, CPU_GDT_KCODE, &tirq0, 0);                  // +0
+  SETGATE(idt[T_IRQ0+IRQ_KBD], 0, CPU_GDT_KCODE, &tirqkbd, 0);        // +1
+  SETGATE(idt[T_IRQ0+IRQ_SERIAL], 0, CPU_GDT_KCODE, &tirqser, 0);     // +4
+  SETGATE(idt[T_IRQ0+IRQ_SPURIOUS], 0, CPU_GDT_KCODE, &tirqspur, 0);  // +7
 
-    SETGATE(idt[T_SYSCALL], 0, CPU_GDT_KCODE, &tsystem, 3);
-    SETGATE(idt[T_LTIMER], 0, CPU_GDT_KCODE, &tltimer, 0);
+  SETGATE(idt[T_IRQ0+2], 0, CPU_GDT_KCODE, &tirq2, 0);  // +2
+  SETGATE(idt[T_IRQ0+3], 0, CPU_GDT_KCODE, &tirq3, 0);  // +3
+  SETGATE(idt[T_IRQ0+5], 0, CPU_GDT_KCODE, &tirq5, 0);  // +5
+  SETGATE(idt[T_IRQ0+6], 0, CPU_GDT_KCODE, &tirq6, 0);  // +6
+  SETGATE(idt[T_IRQ0+8], 0, CPU_GDT_KCODE, &tirq8, 0);  // +8
+  SETGATE(idt[T_IRQ0+9], 0, CPU_GDT_KCODE, &tirq9, 0);  // +9
+  SETGATE(idt[T_IRQ0+10], 0, CPU_GDT_KCODE, &tirq10, 0); // +10
+  SETGATE(idt[T_IRQ0+11], 0, CPU_GDT_KCODE, &tirq11, 0); // +11
+  SETGATE(idt[T_IRQ0+12], 0, CPU_GDT_KCODE, &tirq12, 0); // +12
+  SETGATE(idt[T_IRQ0+13], 0, CPU_GDT_KCODE, &tirq13, 0); // +13
+  SETGATE(idt[T_IRQ0+14], 0, CPU_GDT_KCODE, &tirq14, 0); // +14 (IRQ_IDE)
+  SETGATE(idt[T_IRQ0+15], 0, CPU_GDT_KCODE, &tirq15, 0); // +15
+
+  SETGATE(idt[T_SYSCALL], 0, CPU_GDT_KCODE, &tsystem, 3);
+  SETGATE(idt[T_LTIMER], 0, CPU_GDT_KCODE, &tltimer, 0);
 }
 
 void
@@ -160,6 +177,8 @@ trap_print(trapframe *tf)
 void gcc_noreturn
 trap(trapframe *tf)
 {
+  extern uint8_t e100_irq;
+  int e100_irq_gate = T_IRQ0 + (int)e100_irq;
 	// The user-level environment may have set the DF flag,
 	// and some versions of GCC rely on DF being clear.
 	asm volatile("cld" ::: "cc");
@@ -171,6 +190,7 @@ trap(trapframe *tf)
 
 	// If this trap was anticipated, just use the designated handler.
 	cpu *c = cpu_cur();
+  proc *curr = proc_cur();
 	if (c->recover)
 		c->recover(tf, c->recoverdata);
 
@@ -180,6 +200,7 @@ trap(trapframe *tf)
       break;
     case T_LTIMER:
       lapic_eoi();
+      net_tick();
       //cprintf("Timer Interrupt.\n");
       if(tf->cs & 3)
         proc_yield(tf);
@@ -194,13 +215,25 @@ trap(trapframe *tf)
       lapic_eoi();
       serial_intr();
       trap_return(tf);
+    case T_IRQ0+11: // Temporary
+      cprintf("e100 interrupt\n");
+      e100_intr();
+      lapic_eoi();
+      trap_return(tf);
     case T_IRQ0+IRQ_SPURIOUS:
       cprintf("Spurious Interrupt. That's weird.\n");
       trap_return(tf);
   }
-
-  if(tf->cs & 3) // USER MODE, reflect to parent
+  // USER MODE trap, reflect to parent
+  if(tf->cs & 3) {
+    cprintf("node %d user trap: child: %d\n", net_node, RRNODE(curr->home));
+    // This is not this processe's home
+    if(RRNODE(curr->home) != net_node) {
+      net_migrate(tf, RRNODE(curr->home), -1);
+    }
+    // If we're on the right node, return here.
     proc_ret(tf, -1);
+  }
 
 	// If we panic while holding the console lock,
 	// release it so we don't get into a recursive panic that way.

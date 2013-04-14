@@ -23,6 +23,8 @@
 // This bit mask defines the eflags bits user code is allowed to set.
 #define FL_USER		(FL_CF|FL_PF|FL_AF|FL_ZF|FL_SF|FL_DF|FL_OF)
 
+extern uint8_t net_node;
+
 // During a system call, generate a specific processor trap -
 // as if the user code's INT 0x30 instruction had caused it -
 // and reflect the trap to the parent process as with other traps.
@@ -83,9 +85,9 @@ void usercopy(trapframe *utf, bool copyout,
   c->recover = sysrecover;
 
   if(copyout)
-      memmove((void*)uva, kva, size);
+    memmove((void*)uva, kva, size);
   else
-      memmove(kva, (void*)uva, size);
+    memmove(kva, (void*)uva, size);
 
   c->recover = NULL;
 }
@@ -110,10 +112,26 @@ do_put(trapframe *tf, uint32_t cmd)
   spinlock_acquire(&curr->lock);
 
   uint32_t child_index = tf->regs.edx;
-  proc *child = curr->child[child_index];
+  uint8_t node_number  = child_index >> 8;  // First 8 bits are the node number
+  uint8_t child_number = child_index & 0xff;// The last 8 bits for child number
+
+  // cprintf("node %d put: dest node: %d, child: %d, home node: %d\n", 
+  //   net_node, node_number, child_number, RRNODE(curr->home));
+
+  // When migrating, make sure to adjust eip! => entry == 0
+  // Trying to migrate home and this is not its home
+  if(node_number == 0) {
+    if(RRNODE(curr->home) != net_node) {
+      net_migrate(tf, node_number, 0);
+    }
+  } else if (net_node != node_number) {
+    net_migrate(tf, node_number, 0);
+  }
+
+  proc *child = curr->child[child_number];
 
   if(!child) 
-    child = proc_alloc(curr, child_index);
+    child = proc_alloc(curr, child_number);
   if(child->state != PROC_STOP)
     proc_wait(curr, child, tf);
   
@@ -163,41 +181,54 @@ do_put(trapframe *tf, uint32_t cmd)
 static void
 do_get(trapframe *tf, uint32_t cmd)
 { 
-    proc *curr = proc_cur();
+  proc *curr = proc_cur();
+  spinlock_acquire(&curr->lock);
+  // Find child index (includes node number and child number)
+  int child_index = tf->regs.edx;
+  uint8_t node_number  = child_index >> 8;  // First 8 bits are the node number
+  uint8_t child_number = child_index & 0xff;// The last 8 bits for child number
 
-    spinlock_acquire(&curr->lock);
+  // cprintf("node %d get: dest node: %d, child: %d, home node: %d\n", 
+  //   net_node, node_number, child_number, RRNODE(curr->home));
 
-    int child_index = tf->regs.edx;
-    proc *child = curr->child[child_index];
-
-    if(!child)
-      child = &proc_null;
-      // cprintf("No child process %d\n", child_index);
-
-    if(child->state != PROC_STOP)
-		proc_wait(curr, child, tf);
-
-    spinlock_release(&curr->lock);
-    // cprintf("do_get: current proc: %p, cpu_cur proc: %p\n", curr, cpu_cur()->proc);
-    uint32_t dest = tf->regs.edi; //syscall.h
-    uint32_t size = tf->regs.ecx;
-    uint32_t src = tf->regs.esi;
-
-    if(cmd & SYS_MEMOP) {
-        int op = cmd & SYS_MEMOP;
-        // Check if the destination range is okay
-        if(dest < VM_USERLO || dest > VM_USERHI || dest + size > VM_USERHI)
-            systrap(tf, T_GPFLT, 0);
-        if(op == SYS_COPY) {
-            // we have to check the source too
-            if(src < VM_USERLO || src > VM_USERHI || src + size > VM_USERHI)
-                systrap(tf, T_GPFLT, 0);
-            pmap_copy(child->pdir, src, curr->pdir, dest, size);
-        } else if(op == SYS_MERGE) {
-            pmap_merge(child->rpdir, child->pdir, src, curr->pdir, dest, size);
-        } else
-            pmap_remove(curr->pdir, dest, size);
+  // When migrating, make sure to adjust eip! => entry == 0
+  // Trying to migrate home and this is not its home
+  if(node_number == 0) {
+    if(RRNODE(curr->home) != net_node) {
+      net_migrate(tf, node_number, 0);
     }
+  } else if (net_node != node_number) {
+    net_migrate(tf, node_number, 0);
+  }
+
+  proc *child = curr->child[child_number];
+  if(!child)
+    child = &proc_null;
+    // cprintf("No child process %d\n", child_index);
+  if(child->state != PROC_STOP)
+	proc_wait(curr, child, tf);
+
+  spinlock_release(&curr->lock);
+  // cprintf("do_get: current proc: %p, cpu_cur proc: %p\n", curr, cpu_cur()->proc);
+  uint32_t dest = tf->regs.edi; //syscall.h
+  uint32_t size = tf->regs.ecx;
+  uint32_t src = tf->regs.esi;
+
+  if(cmd & SYS_MEMOP) {
+    int op = cmd & SYS_MEMOP;
+    // Check if the destination range is okay
+    if(dest < VM_USERLO || dest > VM_USERHI || dest + size > VM_USERHI)
+        systrap(tf, T_GPFLT, 0);
+    if(op == SYS_COPY) {
+      // we have to check the source too
+      if(src < VM_USERLO || src > VM_USERHI || src + size > VM_USERHI)
+          systrap(tf, T_GPFLT, 0);
+      pmap_copy(child->pdir, src, curr->pdir, dest, size);
+    } else if(op == SYS_MERGE) {
+        pmap_merge(child->rpdir, child->pdir, src, curr->pdir, dest, size);
+    } else
+        pmap_remove(curr->pdir, dest, size);
+  }
 
 	if(cmd & SYS_PERM)
 		pmap_setperm(curr->pdir, dest, size, cmd & SYS_RW);
@@ -210,6 +241,13 @@ do_get(trapframe *tf, uint32_t cmd)
 
 static void
 do_ret(trapframe *tf, uint32_t cmd) {
+  proc *curr = proc_cur();
+
+  // cprintf("node %d return: home: %d\n", net_node, RRNODE(curr->home));
+  // This is not this node's home
+  if(RRNODE(curr->home) != net_node) {
+    net_migrate(tf, RRNODE(curr->home), 0);
+  }
   proc_ret(tf, 1);
 }
 
