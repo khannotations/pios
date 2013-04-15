@@ -215,8 +215,10 @@ trap(trapframe *tf)
       lapic_eoi();
       serial_intr();
       trap_return(tf);
+
+    // MAKE SURE TO MAKE THIS DYNAMIC LATER, NOT HARDCODED TO 11
     case T_IRQ0+11: // Temporary
-      cprintf("e100 interrupt\n");
+      // cprintf("e100 interrupt\n");
       e100_intr();
       lapic_eoi();
       trap_return(tf);
@@ -224,13 +226,15 @@ trap(trapframe *tf)
       cprintf("Spurious Interrupt. That's weird.\n");
       trap_return(tf);
   }
+  // This is not this processe's home
+  cprintf("trap (%s) in %p (home %d)\n", 
+    trap_name(tf->trapno), curr, RRNODE(curr->home));
+  if(RRNODE(curr->home) != net_node) {
+    
+    net_migrate(tf, RRNODE(curr->home), -1);
+  }
   // USER MODE trap, reflect to parent
   if(tf->cs & 3) {
-    cprintf("node %d user trap: child: %d\n", net_node, RRNODE(curr->home));
-    // This is not this processe's home
-    if(RRNODE(curr->home) != net_node) {
-      net_migrate(tf, RRNODE(curr->home), -1);
-    }
     // If we're on the right node, return here.
     proc_ret(tf, -1);
   }

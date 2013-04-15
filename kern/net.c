@@ -108,18 +108,20 @@ net_rx(void *pkt, int len)
 
 	// Process received packet
 	switch(h->type) {
-		// Migrate request
 		case NET_MIGRQ:
-			cprintf("node %d: received migr request\n", net_node);
+			cprintf("net_rx: received migr request\n", net_node);
 			net_rxmigrq((net_migrq*)h);
 			break;
-		// Migrate reply
 		case NET_MIGRP:
-			cprintf("node %d: received migr reply\n", net_node);
+			cprintf("net_rx: received migr reply\n", net_node);
 			net_rxmigrp((net_migrp*)h);
 			break;
-		case NET_PULLRQ:		// Page pull request
+		case NET_PULLRQ:
+			cprintf("net_rx: received pull request");
+			net_rxpullrq((net_pullrq*)h);
 		case NET_PULLRP:		// Page pull reply
+			cprintf("net_rx: received pull reply");
+			net_rxpullrq((net_pullrphdr*)h);
 		default:
 			warn("net_rx: invalid packet type\n");
 	}
@@ -139,15 +141,17 @@ net_tick()
 
 	spinlock_acquire(&net_lock);
 
-	proc *net_migrpoint;
-	// cprintf("Starting net_tick\n");
-	for(net_migrpoint = net_migrlist; net_migrpoint; 
-		net_migrpoint = net_migrpoint->migrnext) {
-		// Resend packets
-		cprintf("Resending %p |", net_migrpoint);
-		net_txmigrq(net_migrpoint);
+	if(net_migrlist){
+		proc *net_migrpoint;
+		cprintf("net_tick: resending migrlist ");
+		for(net_migrpoint = net_migrlist; net_migrpoint; 
+			net_migrpoint = net_migrpoint->migrnext) {
+			// Resend packets
+			cprintf("%p->", net_migrpoint);
+			net_txmigrq(net_migrpoint);
+		}
+		cprintf("END\n");
 	}
-	// cprintf("\n\n\n");
 
 	spinlock_release(&net_lock);
 }
@@ -186,12 +190,10 @@ net_migrate(trapframe *tf, uint8_t dstnode, int entry)
 	// (In the case of a proc it won't anyway, but just for consistency.)
 	net_rrshare(p, dstnode);
 
-	// spinlock_acquire(&p->lock); (should be holding already)
 	p->state = PROC_MIGR;
 	assert(p->migrnext == NULL); 	// Is this true?
 	p->migrnext = NULL;						// In case it's not...
 	p->migrdest = dstnode;
-	// spinlock_release(&p->lock);
 
 	spinlock_acquire(&net_lock);
 	// If the list is empty, add p to the front
@@ -239,7 +241,7 @@ net_txmigrq(proc *p)
 	rq->pdir = RRCONS(net_node, mem_phys(p->pdir), 0);
 	rq->save = p->sv;
 	// Send (No body)
-	cprintf("node %d: sending migr req\n", net_node);
+	cprintf("sending migr req\n", net_node);
 	net_tx(rq, sizeof(*rq), 0, 0);
 }
 
@@ -289,6 +291,7 @@ void net_rxmigrq(net_migrq *migrq)
 	// before we can do anything else.
 	// Just pull it straight into our proc's page directory;
 	// XXX first free old contents of pdir
+
 	net_pull(p, p->rrpdir, p->pdir, PGLEV_PDIR);
 }
 
@@ -300,7 +303,7 @@ net_txmigrp(uint8_t dstnode, uint32_t prochome)
 	net_ethsetup(&rp->eth, dstnode);
 	rp->type = NET_MIGRP;
 	rp->home = prochome;
-	cprintf("node %d: sending migr reply\n", net_node);
+	cprintf("sending migr reply\n", net_node);
 	net_tx(rp, sizeof(*rp), 0, 0);
 	// Lab 5: insert code to create and send out a migrate reply.
 	// warn("net_txmigrp not implemented");
@@ -363,7 +366,16 @@ net_pull(proc *p, uint32_t rr, void *pg, int pglevel)
 	// Lab 5: insert code here to put the process into the PROC_PULL state,
 	// save in the proc structure all information needed for the pull,
 	// and transmit a pull message using net_txpullrq().
-	warn("net_pull not implemented");
+
+	assert(spinlock_holding(&p->lock));
+	p->state 		= PROC_PULL;
+	p->pullrr 	= rr;
+	// p->pullva = ? mem_phys(pg) or RRADDR(rr)
+	p->pglev 		= pglevel;
+	p->pullpg 	= pg;
+	p->arrived 	= 0;
+
+	net_txpullrq(p);
 }
 
 // Transmit a page pull request on behalf of some process.
@@ -373,8 +385,17 @@ net_txpullrq(proc *p)
 	assert(p->state == PROC_PULL);
 	assert(spinlock_holding(&net_lock));
 
-	// Lab 5: transmit or retransmit a pull request (net_pullrq).
-	warn("net_txpullrq not implemented");
+	net_pullrq *rq;
+	net_ethsetup(&rq->eth, dstnode);
+	rq->type = NET_PULLRQ;
+	rq->rr = rr;
+	rq->pglev = pglevel;
+	rq->need = 7;
+
+	cprintf("Need %d\n", (4 & 2 & 1));
+
+	// No body, just header
+	net_tx(rq, sizeof(*rq), 0, 0);
 }
 
 // Process a page pull request we've received.
@@ -411,6 +432,19 @@ net_rxpullrq(net_pullrq *rq)
 	// Mark the page shared, since we're about to share it.
 	net_rrshare(pg, rqnode);
 
+	// First part needed
+	if(rq->needed & 4) {
+		// First bit is part 0
+		net_txpullrp(rqnode, rr, rq->pglev, 0, (void*)addr);
+	}
+	if(rq->needed & 2) {
+		// Second bit is part 1
+		net_txpullrp(rqnode, rr, rq->pglev, 1, (void*)addr);
+	}
+	if(rq->needed & 1) {
+		// Third is 2
+		net_txpullrp(rqnode, rr, rq->pglev, 2, (void*)addr);
+	}
 	// Send back whichever of the three page parts the caller still needs.
 	// (We must divide the page into parts to fit into Ethernet packets.)
 	// Lab 5: use net_txpullrp() to send the appropriate parts of the page.
@@ -443,6 +477,12 @@ net_txpullrp(uint8_t rqnode, uint32_t rr, int pglev, int part, void *pg)
 	uint32_t rrs[nrrs];
 	if (pglev > 0) {
 		const uint32_t *pt = data;
+		int i;
+		for(i=0; i<nrrs; i++) {
+			if(pt[i] == PTE_ZERO) {
+				rrs[i] = RRCONS(0, pt + i, )
+			}
+		}
 		// Lab 5: convert the PDEs or PTEs in pt[0..nrrs-1]
 		// into corresponding remote references in rrs[0..nrrs-1].
 		// For PDEs/PTEs pointing to PMAP_ZERO,

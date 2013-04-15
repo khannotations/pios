@@ -69,16 +69,16 @@
 #define PDXSHIFT	22		// offset of PDX in a linear address
 
 // Page table/directory entry flags.
-#define PTE_P		0x001	// Present
-#define PTE_W		0x002	// Writeable
-#define PTE_U		0x004	// User-accessible
-#define PTE_PWT		0x008	// Write-Through
-#define PTE_PCD		0x010	// Cache-Disable
-#define PTE_A		0x020	// Accessed
-#define PTE_D		0x040	// Dirty
-#define PTE_PS		0x080	// Page Size (only in PDEs)
-#define PTE_PAT		0x080	// Page Attribute Table (only in PTEs)
-#define PTE_G		0x100	// Global
+#define PTE_P		0x001			// Present
+#define PTE_W		0x002			// Writeable
+#define PTE_U		0x004			// User-accessible
+#define PTE_PWT		0x008		// Write-Through
+#define PTE_PCD		0x010		// Cache-Disable
+#define PTE_A		0x020			// Accessed
+#define PTE_D		0x040			// Dirty
+#define PTE_PS		0x080		// Page Size (only in PDEs)
+#define PTE_PAT		0x080		// Page Attribute Table (only in PTEs)
+#define PTE_G		0x100			// Global
 
 // The PTE_AVAIL bits aren't used by the kernel or interpreted by the
 // hardware, so user processes are allowed to set them arbitrarily.
