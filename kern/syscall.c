@@ -112,7 +112,7 @@ do_put(trapframe *tf, uint32_t cmd)
   spinlock_acquire(&curr->lock);
 
   uint32_t child_index = tf->regs.edx;
-  uint8_t node_number  = child_index >> 8;  // First 8 bits are the node number
+  uint8_t node_number  = child_index >> 8 & 0xff;  // First 8 bits are the node number
   uint8_t child_number = child_index & 0xff;// The last 8 bits for child number
 
   // cprintf("node %d put: dest node: %d, child: %d, home node: %d\n", 

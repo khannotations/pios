@@ -109,20 +109,20 @@ net_rx(void *pkt, int len)
   // Process received packet
   switch(h->type) {
     case NET_MIGRQ:
-      // cprintf("net_rx: received migr request\n", net_node);
-      net_rxmigrq((net_migrq*)h);
+      cprintf("net_rx: received migr request\n", net_node);
+      net_rxmigrq(pkt);
       break;
     case NET_MIGRP:
-      // cprintf("net_rx: received migr reply\n", net_node);
-      net_rxmigrp((net_migrp*)h);
+      cprintf("net_rx: received migr reply\n", net_node);
+      net_rxmigrp(pkt);
       break;
     case NET_PULLRQ:
       cprintf("net_rx: received pull request\n");
-      net_rxpullrq((net_pullrq*)h);
+      net_rxpullrq(pkt);
       break;
     case NET_PULLRP:    // Page pull reply
       cprintf("net_rx: received pull reply\n");
-      net_rxpullrp((net_pullrphdr*)h, 0);       // len field unused
+      net_rxpullrp(pkt, len);    
       break;
     default:
       warn("net_rx: invalid packet type\n");
@@ -142,7 +142,7 @@ net_tick()
     return;
 
   spinlock_acquire(&net_lock);
-
+/*
   if(net_migrlist){
     proc *net_migrpoint;
     cprintf("net_tick: resending migrlist ");
@@ -153,6 +153,18 @@ net_tick()
       net_txmigrq(net_migrpoint);
     }
     cprintf("END\n");
+  }*/
+  proc *migrations, *pulls;
+  for(migrations = net_migrlist, pulls = net_pulllist; (migrations || pulls);
+          migrations = migrations->migrnext, pulls = pulls->pullnext) {
+    if(migrations) {
+        cprintf("sending migrq from %x\n", migrations);
+        net_txmigrq(migrations);
+    }
+    if(pulls) {
+        cprintf("sending pull request from %x\n", pulls);
+        net_txpullrq(pulls);
+    }
   }
   // if(net_pulllist) {
   //  proc *net_pullpoint;
@@ -205,7 +217,6 @@ net_migrate(trapframe *tf, uint8_t dstnode, int entry)
 
   p->state = PROC_MIGR;
   assert(p->migrnext == NULL);  // Is this true?
-  p->migrnext = NULL;           // In case it's not...
   p->migrdest = dstnode;
 
   spinlock_acquire(&net_lock);
@@ -247,14 +258,14 @@ net_txmigrq(proc *p)
   assert(spinlock_holding(&net_lock));
 
   // Make request from scratch
-  net_migrq *rq;
-  net_ethsetup(&rq->eth, p->migrdest);
-  rq->type = NET_MIGRQ;                         // As per net.h
-  rq->home = RRCONS(net_node, mem_phys(p), 0);  // Just like in proc_alloc
-  rq->pdir = RRCONS(net_node, mem_phys(p->pdir), 0);
-  rq->save = p->sv;
+  net_migrq rq;
+  net_ethsetup(&rq.eth, p->migrdest);
+  rq.type = NET_MIGRQ;                         // As per net.h
+  rq.home = p->home; 
+  rq.pdir = RRCONS(net_node, mem_phys(p->pdir), 0);
+  rq.save = p->sv;
   // Send (No body)
-  net_tx(rq, sizeof(*rq), 0, 0);
+  net_tx(&rq, sizeof(rq), 0, 0);
 }
 
 // This gets called by net_rx() to process a received migrq packet.
@@ -311,11 +322,11 @@ void net_rxmigrq(net_migrq *migrq)
 void
 net_txmigrp(uint8_t dstnode, uint32_t prochome)
 {
-  net_migrp *rp;
-  net_ethsetup(&rp->eth, dstnode);
-  rp->type = NET_MIGRP;
-  rp->home = prochome;
-  net_tx(rp, sizeof(*rp), 0, 0);
+  net_migrp rp;
+  net_ethsetup(&rp.eth, dstnode);
+  rp.type = NET_MIGRP;
+  rp.home = prochome;
+  net_tx(&rp, sizeof(rp), 0, 0);
   // Lab 5: insert code to create and send out a migrate reply.
 }
 
@@ -349,8 +360,10 @@ void net_rxmigrp(net_migrp *migrp)
   }
   spinlock_release(&net_lock);
   // If we didn't find it, nothing to do...
-  if(!the_one)
+  if(!the_one) {
+      warn("Unable to find process.");
     return;
+  }
 
   // Nothing should be able to change this process while it's away,
   // until it returns.
@@ -358,6 +371,7 @@ void net_rxmigrp(net_migrp *migrp)
   // Mark the process correctly
   // spinlock_acquire(&the_one->lock);
   the_one->migrnext = NULL;
+  the_one->migrdest = 0;
   the_one->state = PROC_AWAY;
   // spinlock_release(&the_one->lock);
 }
@@ -400,14 +414,13 @@ net_pull(proc *p, uint32_t rr, void *pg, int pglevel)
 
   cprintf("net_pull: sending for %p, addr %p, pglevel %d\n",
     p, RRADDR(rr), pglevel);
-  if(!spinlock_holding(&p->lock))
-    spinlock_acquire(&p->lock);
   p->state    = PROC_PULL;
   p->pullrr   = rr;
   p->pglev    = pglevel;
   p->pullpg   = pg;
   p->arrived  = 0;
   net_txpullrq(p);
+  spinlock_release(&net_lock);
 }
 
 // Transmit a page pull request on behalf of some process.

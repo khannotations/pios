@@ -74,7 +74,7 @@ trap_init_idt(void)
 
   // IRQ = 32
   SETGATE(idt[T_IRQ0], 0, CPU_GDT_KCODE, &tirq0, 0);                  // +0
-  SETGATE(idt[T_IRQ0+IRQ_KBD], 0, CPU_GDT_KCODE, &tirqkbd, 0);        // +1
+  SETGATE(idt[T_IRQ0+IRQ_KBD], 0, CPU_GDT_KCODE, &tirqkbd,  0);        // +1
   SETGATE(idt[T_IRQ0+IRQ_SERIAL], 0, CPU_GDT_KCODE, &tirqser, 0);     // +4
   SETGATE(idt[T_IRQ0+IRQ_SPURIOUS], 0, CPU_GDT_KCODE, &tirqspur, 0);  // +7
 
@@ -199,8 +199,8 @@ trap(trapframe *tf)
       syscall(tf);
       break;
     case T_LTIMER:
-      lapic_eoi();
       net_tick();
+      lapic_eoi();
       //cprintf("Timer Interrupt.\n");
       if(tf->cs & 3)
         proc_yield(tf);
@@ -216,26 +216,29 @@ trap(trapframe *tf)
       serial_intr();
       trap_return(tf);
 
-    // MAKE SURE TO MAKE THIS DYNAMIC LATER, NOT HARDCODED TO 11
-    case T_IRQ0+11: // Temporary
-      // cprintf("e100 interrupt\n");
-      e100_intr();
-      lapic_eoi();
-      trap_return(tf);
     case T_IRQ0+IRQ_SPURIOUS:
       cprintf("Spurious Interrupt. That's weird.\n");
       trap_return(tf);
   }
+  
+  if(tf->trapno == e100_irq_gate) { 
+      e100_intr();
+      lapic_eoi();
+      trap_return(tf);
+  }
+  
+  
+  
+  
   // This is not this processe's home
   cprintf("trap (%s) in %p (home %d)\n", 
     trap_name(tf->trapno), curr, RRNODE(curr->home));
-  if(RRNODE(curr->home) != net_node) {
-    
-    net_migrate(tf, RRNODE(curr->home), -1);
-  }
   // USER MODE trap, reflect to parent
   if(tf->cs & 3) {
     // If we're on the right node, return here.
+    if(RRNODE(curr->home) != net_node) {
+        net_migrate(tf, RRNODE(curr->home), -1);
+    }
     proc_ret(tf, -1);
   }
 

@@ -63,6 +63,7 @@ mem_init(void)
 
   spinlock_init(&_freelist_lock);
   pageinfo *mem_pageinfo = (pageinfo*)ROUNDUP((uint32_t)end, (uint32_t)sizeof(pageinfo));
+  memset(mem_pageinfo, 0, sizeof(pageinfo)*mem_npage);
 	pageinfo **freetail = &mem_freelist;
 	int i;
 	// Pages 0 and 1 are reserved.
