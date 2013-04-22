@@ -430,18 +430,17 @@ net_txpullrq(proc *p)
   assert(p->state == PROC_PULL);
   assert(spinlock_holding(&net_lock));
   
-  net_pullrq *rq;
-  net_ethsetup(&rq->eth, RRNODE(p->pullrr));
-  rq->type = NET_PULLRQ;
-  rq->rr = p->pullrr;
-  rq->pglev = p->pglev;
-  rq->need = 7;
+  net_pullrq rq;
+  net_ethsetup(&rq.eth, RRNODE(p->pullrr));
+  rq.type = NET_PULLRQ;
+  rq.rr = p->pullrr;
+  rq.pglev = p->pglev;
+  rq.need = p->arrived ^ 7; // ~arrived lower bits
 
-  spinlock_release(&net_lock);
   // No body, just header
   cprintf("txpullrq: sending for %p, addr %p, pglev %d\n", 
     p, RRADDR(p->pullrr), p->pglev);
-  net_tx(rq, sizeof(*rq), 0, 0);
+  net_tx(&rq, sizeof(rq), 0, 0);
 }
 
 // Process a page pull request we've received.
@@ -481,13 +480,13 @@ net_rxpullrq(net_pullrq *rq)
   cprintf("rxpullrq: received rq for addr %p, pglev %d. responding...\n", 
     (void*)addr, rq->pglev);
   // First part needed
-  if(rq->need & 4) {
+  if(rq->need & 1) {
     net_txpullrp(rqnode, rr, rq->pglev, 0, (void*)addr);
   }
   if(rq->need & 2) {
     net_txpullrp(rqnode, rr, rq->pglev, 1, (void*)addr);
   }
-  if(rq->need & 1) {
+  if(rq->need & 4) {
     net_txpullrp(rqnode, rr, rq->pglev, 2, (void*)addr);
   }
   // Mark this page shared with the requesting node.
@@ -519,24 +518,26 @@ net_txpullrp(uint8_t rqnode, uint32_t rr, int pglev, int part, void *pg)
   if (pglev > 0) {
     const uint32_t *pt = data;
     int i;
-    for(i=0; i<nrrs; i++) {
-      if(pt[i] == PTE_ZERO) {
-        // cprintf("txpullrp: [%d] assigning %p to pte_zero\n", i, rrs+i);
-        rrs[i] = RRCONS(0, 0, RR_REMOTE | RR_RW);
-      } else {
-        // cprintf("txpullrp: [%d] assigning %p to %p\n", i, rrs+i, pt+i);
-        rrs[i] = RRCONS(net_node, mem_phys(pt+i), 0);
-      }
+    for(i = 0; i < nrrs; i++) {
+        pte_t tab = pt[i];
+        // If its a global pte then dont send it
+        if(tab & PTE_G)
+            rrs[i] = 0;
+        // If its a remote reference, just send it
+        else if(tab & PTE_REMOTE)
+            rrs[i] = tab;
+        // If its a zero page, just send RR_REMOTE
+        else if(PGADDR(tab) == PTE_ZERO)
+            rrs[i] = (tab & RR_RW) | RR_REMOTE;
+        // Otherwise its a user-space pte that needs to be transferred
+        else {
+            pageinfo *p = mem_phys2pi(PGADDR(tab));
+            if(p->home == 0)    // This is our comps page
+                rrs[i] = RRCONS(net_node, PGADDR(tab), tab & RR_RW);
+            else
+                rrs[i] = p->home; // Send back remote ref
+        }
     }
-    // Lab 5: convert the PDEs or PTEs in pt[0..nrrs-1]
-    // into corresponding remote references in rrs[0..nrrs-1].
-    // For PDEs/PTEs pointing to PMAP_ZERO,
-    // produce an RR that is zero except for the RR_REMOTE
-    // and the PDE/PTE's nominal permissions.
-    // For page directories, just produce zero RRs
-    // for PDEs representing the non-user portions
-    // of the address space.
-    // warn("net_txpullrq not fully implemented");
     data = rrs; // Send RRs instead of original page.
   }
 
@@ -546,8 +547,6 @@ net_txpullrp(uint8_t rqnode, uint32_t rr, int pglev, int part, void *pg)
   rph.type = NET_PULLRP;
   rph.rr = rr;
   rph.part = part;
-  // cprintf("txpullrp (sending part %d): of addr %p, pglev: %d\n",
-  //  part+1, RRADDR(rr), pglev);
   net_tx(&rph, sizeof(rph), data, len);
 }
 
@@ -659,54 +658,33 @@ net_pullpte(proc *p, uint32_t *pte, int pglevel)
 {
   uint32_t rr = *pte;
   assert(rr & RR_REMOTE);
-  assert(pglevel > 0);      // Shouldn't be pullpte'ing a page...
 
   // Zero except for permissions, just return PTE_ZERO
-  if(RRNODE(rr) == 0 && RRADDR(rr) == 0) {
+  if(RRADDR(rr) == 0) {
     *pte = PTE_ZERO;
     return 1;
   }
-  // On current node, return the correct pte
+
   if(RRNODE(rr) == net_node) {
-    *pte = RRADDR(rr);
+    *pte = RRADDR(rr) | (rr & RR_RW);
     return 1;
   }
-  // Now we're looking on another node, check if we've seen this addr before
-  pageinfo *pi;
-  if((pi = mem_rrlookup(rr)) != NULL) {
-    cprintf("net_pullpte: found on rrlookup: %p\n", pi);
-    *pte = mem_pi2phys(pi);
-    return 1;
+    
+  // reuse pages we already have
+  pageinfo *pi = mem_rrlookup(rr);
+  if(pi != NULL) {
+	*pte = mem_pi2phys(pi) | (rr & RR_RW);
+	return 1;
   }
 
-  // We haven't seen this page before
+    // otherwise we have to allocate our own page	
   pi = mem_alloc();
-  if(!pi)
-    panic("net_pullpte: no more memory for remote pde/pte!\n");
   mem_incref(pi);
-  char *which = pglevel == 1 ? "pte" : "pde";
-  cprintf("net_pullpte: pulling proc %p's remote %s: %p\n", 
-    p, which, RRADDR(rr));
-  // net_pull(proc *p, uint32_t rr, void *pg, int pglevel)
-
-  uint32_t prr = RRCONS(RRNODE(p->home), RRADDR(rr), RR_RW);
-  net_pull(p, prr, mem_pi2ptr(pi), pglevel);
+  *pte = mem_pi2phys(pi) | (rr & RR_RW);
+  *pte |= PTE_P | PTE_U; // Make the page exist
+  mem_rrtrack(rr, pi);
+  net_pull(p, rr, mem_pi2ptr(pi), pglevel);
   return 0;
 
-  // Lab 5: Examine an RR that we received in a pdir or ptable,
-  // and figure out how to convert it to a local PDE or PTE.
-  // There are four important cases to handle:
-  // - The RR is zero except for RR_REMOTE and RR_RW (the permissions):
-  //   convert it into a PTE_ZERO mapping immediately, and return 1.
-  // - The RR refers to a page on OUR node (RRNODE(rr) == net_node):
-  //   convert it directly back into a PDE or PTE and return 1.
-  // - The RR refers to a page whose home is on another node,
-  //   but which we've seen before (mem_rrlookup(rr) != NULL):
-  //   convert it directly into a PDE or PTE and return 1.
-  // - The RR refers to a remote page we haven't seen before:
-  //   allocate a page to hold a local copy,
-  //   initiate a pull on that page by calling net_pull(),
-  //   and return 0 indicating we have to wait for the pull to complete.
-  panic("net_pullpte not implemented");
 }
 
