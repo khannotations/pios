@@ -109,19 +109,15 @@ net_rx(void *pkt, int len)
   // Process received packet
   switch(h->type) {
     case NET_MIGRQ:
-      // cprintf("net_rx: received migr request\n";
       net_rxmigrq(pkt);
       break;
     case NET_MIGRP:
-      // cprintf("net_rx: received migr reply\n");
       net_rxmigrp(pkt);
       break;
     case NET_PULLRQ:
-      // cprintf("net_rx: received pull request\n");
       net_rxpullrq(pkt);
       break;
     case NET_PULLRP:    // Page pull reply
-      // cprintf("net_rx: received pull reply\n");
       net_rxpullrp(pkt, len);    
       break;
     default:
@@ -142,42 +138,44 @@ net_tick()
     return;
 
   spinlock_acquire(&net_lock);
-/*
+
   if(net_migrlist){
     proc *net_migrpoint;
-    cprintf("net_tick: resending migrlist ");
+    // cprintf("net_tick: resending migrlist ");
     for(net_migrpoint = net_migrlist; net_migrpoint; 
       net_migrpoint = net_migrpoint->migrnext) {
       // Resend packets
-      cprintf("%p->", net_migrpoint);
+      // cprintf("%p->", net_migrpoint);
       net_txmigrq(net_migrpoint);
     }
-    cprintf("END\n");
-  }*/
+    // cprintf("END\n");
+  }
+  if(net_pulllist) {
+    proc *net_pullpoint;
+    // cprintf("net_tick: resending pulllist ");
+    for(net_pullpoint = net_pulllist; net_pullpoint; 
+      net_pullpoint = net_pullpoint->pullnext) {
+      // Resend packets
+      // cprintf("%p->", net_pullpoint);
+      net_txpullrq(net_pullpoint);
+   }
+   // cprintf("END\n");
+  }
+  /*
+  Akshay: This won't work if there aren't the same number of pulls and migrations
   proc *migrations, *pulls;
   for(migrations = net_migrlist, pulls = net_pulllist; (migrations || pulls);
           migrations = migrations->migrnext, pulls = pulls->pullnext) {
     if(migrations) {
-        cprintf("sending migrq from %x\n", migrations);
+        // cprintf("sending migrq from %x\n", migrations);
         net_txmigrq(migrations);
     }
     if(pulls) {
-        cprintf("sending pull request from %x\n", pulls);
+        // cprintf("sending pull request from %x\n", pulls);
         net_txpullrq(pulls);
     }
   }
-  // if(net_pulllist) {
-  //  proc *net_pullpoint;
-  //  cprintf("net_tick: resending pulllist ");
-  //  for(net_pullpoint = net_pulllist; net_pullpoint; 
-  //    net_pullpoint = net_pullpoint->pullnext) {
-  //    // Resend packets
-  //    // cprintf("%p->", net_pullpoint);
-  //    net_txpullrq(net_pullpoint);
-  //  }
-  //  cprintf("END\n");
-  // }
-
+  */
   spinlock_release(&net_lock);
 }
 
@@ -203,22 +201,19 @@ void gcc_noinline
 net_migrate(trapframe *tf, uint8_t dstnode, int entry)
 {
   proc *p = proc_cur();
+  cprintf("net_migrate: saving eip %x for %p\n", tf->eip, p);
   proc_save(p, tf, entry);  // save current process's state
 
   assert(dstnode > 0 && dstnode <= NET_MAXNODES && dstnode != net_node);
-  // assert(spinlock_holding(&p->lock));
-  //cprintf("proc %x at eip %x migrating to node %d\n",
-  //  p, p->tf.eip, dstnode);
 
   // Account for the fact that we've shared this process,
   // to make sure the remote refs it contains don't go away.
   // (In the case of a proc it won't anyway, but just for consistency.)
   net_rrshare(p, dstnode);
 
-  // spinlock_acquire(&p->lock);
   p->state = PROC_MIGR;
+  assert(p->migrnext == NULL);  // Is this true?
   p->migrdest = dstnode;
-  // spinlock_release(&p->lock);
 
   spinlock_acquire(&net_lock);
   // If the list is empty, add p to the front
@@ -232,17 +227,16 @@ net_migrate(trapframe *tf, uint8_t dstnode, int entry)
     // Now net_migrtail->migrnext is NULL, so make it p
     net_migrpoint->migrnext = p;
   }
-  cprintf("net_migrate: added proc. migrlist is now ");
-  proc *np = net_migrlist;
-  while(np) {
-    cprintf("%p->", np);
-    np = np->migrnext;
-  }
-  cprintf("END\n");
+  // cprintf("net_migrate: added proc. migrlist is now ");
+  // proc *np = net_migrlist;
+  // while(np) {
+  //   cprintf("%p->", np);
+  //   np = np->migrnext;
+  // }
+  // cprintf("END\n");
   // Send request
   net_txmigrq(p);
   spinlock_release(&net_lock);
-  // How do we return..?
   // Do something else now
   proc_sched();
 }
@@ -282,7 +276,6 @@ void net_rxmigrq(net_migrq *migrq)
   } else {  // Someone else's proc - have we seen it before?
     pageinfo *pi = mem_rrlookup(migrq->home);
     p = pi != NULL ? mem_pi2ptr(pi) : NULL;
-    cprintf("found old process %p\n", p);
   }
   if (p == NULL) {      // Unrecognized proc RR
     p = proc_alloc(NULL, 0);  // Allocate new local proc
@@ -295,7 +288,7 @@ void net_rxmigrq(net_migrq *migrq)
   // If the proc isn't in the AWAY state, assume it's a duplicate packet.
   // XXX not very robust - should probably have sequence numbers too.
   if (p->state != PROC_AWAY) {
-    warn("net_rxmigrq: proc %x is already local");
+    cprintf("net_rxmigrq: proc %p is already local\n", p);
     return net_txmigrp(srcnode, p->home);
   }
 
@@ -329,7 +322,6 @@ net_txmigrp(uint8_t dstnode, uint32_t prochome)
   rp.type = NET_MIGRP;
   rp.home = prochome;
   net_tx(&rp, sizeof(rp), 0, 0);
-  // Lab 5: insert code to create and send out a migrate reply.
 }
 
 // Receive a migrate reply message.
@@ -337,12 +329,12 @@ void net_rxmigrp(net_migrp *migrp)
 {
   uint8_t msgsrcnode = migrp->eth.src[5];
   assert(msgsrcnode > 0 && msgsrcnode <= NET_MAXNODES);
-  proc *the_one = NULL;
+  proc *p = NULL;
 
   spinlock_acquire(&net_lock);
   // First node is the one!
   if(net_migrlist && net_migrlist->home == migrp->home) {
-    the_one = net_migrlist;
+    p = net_migrlist;
     // Move the migrlist head
     net_migrlist = net_migrlist->migrnext;
   } else {
@@ -351,9 +343,9 @@ void net_rxmigrp(net_migrp *migrp)
     while(net_migrpoint) {
       // Found it
       if(net_migrpoint->migrnext->home == migrp->home) {
-        the_one = net_migrpoint->migrnext;
+        p = net_migrpoint->migrnext;
         // Point this migrnext to the one after the_one
-        net_migrpoint->migrnext = the_one->migrnext;
+        net_migrpoint->migrnext = p->migrnext;
         // Finish
         break;
       }
@@ -362,20 +354,15 @@ void net_rxmigrp(net_migrp *migrp)
   }
   spinlock_release(&net_lock);
   // If we didn't find it, nothing to do...
-  if(!the_one) {
-      warn("Unable to find process.");
+  if(!p) {
+    cprintf("\n\n\nUnable to find process %p\n\n\n", RRADDR(migrp->home));
     return;
   }
 
-  // Nothing should be able to change this process while it's away,
-  // until it returns.
-  // assert(spinlock_holding(&the_one->lock));
   // Mark the process correctly
-  // spinlock_acquire(&the_one->lock);
-  the_one->migrnext = NULL;
-  the_one->migrdest = 0;
-  the_one->state = PROC_AWAY;
-  // spinlock_release(&the_one->lock);
+  p->migrnext = NULL;
+  p->migrdest = 0;
+  p->state = PROC_AWAY;
 }
 
 // Pull a page via a remote ref and put process p to sleep waiting for it.
@@ -406,16 +393,6 @@ net_pull(proc *p, uint32_t rr, void *pg, int pglevel)
     // Now net_pulltail->pullnext is NULL, so make it p
     net_pullpoint->pullnext = p;
   }
-  cprintf("net_pull: added proc. pulllist is now ");
-  proc *np = net_pulllist;
-  while(np) {
-    cprintf("%p->", np);
-    np = np->pullnext;
-  }
-  cprintf("END\n");
-
-  cprintf("net_pull: sending for %p, addr %p, pglevel %d\n",
-    p, RRADDR(rr), pglevel);
   p->state    = PROC_PULL;
   p->pullrr   = rr;
   p->pglev    = pglevel;
@@ -440,8 +417,8 @@ net_txpullrq(proc *p)
   rq.need = p->arrived ^ 7; // ~arrived lower bits
 
   // No body, just header
-  cprintf("txpullrq: sending for %p, addr %p, pglev %d\n", 
-    p, RRADDR(p->pullrr), p->pglev);
+  // cprintf("txpullrq: sending for %p, addr %p, pglev %d\n", 
+  //   p, RRADDR(p->pullrr), p->pglev);
   net_tx(&rq, sizeof(rq), 0, 0);
 }
 
@@ -479,8 +456,6 @@ net_rxpullrq(net_pullrq *rq)
   // Mark the page shared, since we're about to share it.
   net_rrshare(pg, rqnode);
 
-  cprintf("rxpullrq: received rq for addr %p, pglev %d; responding.\n", 
-    (void*)addr, rq->pglev);
   // First part needed
   if(rq->need & 1) {
     net_txpullrp(rqnode, rr, rq->pglev, 0, (void*)addr);
@@ -521,24 +496,24 @@ net_txpullrp(uint8_t rqnode, uint32_t rr, int pglev, int part, void *pg)
     const uint32_t *pt = data;
     int i;
     for(i = 0; i < nrrs; i++) {
-        pte_t tab = pt[i];
-        // If its a global pte then dont send it
-        if(tab & PTE_G)
-            rrs[i] = 0;
-        // If its a remote reference, just send it
-        else if(tab & PTE_REMOTE)
-            rrs[i] = tab;
-        // If its a zero page, just send RR_REMOTE
-        else if(PGADDR(tab) == PTE_ZERO)
-            rrs[i] = (tab & RR_RW) | RR_REMOTE;
-        // Otherwise its a user-space pte that needs to be transferred
-        else {
-            pageinfo *p = mem_phys2pi(PGADDR(tab));
-            if(p->home == 0)    // This is our comps page
-                rrs[i] = RRCONS(net_node, PGADDR(tab), tab & RR_RW);
-            else
-                rrs[i] = p->home; // Send back remote ref
-        }
+      pte_t tab = pt[i];
+      // If its a global pte then dont send it
+      if(tab & PTE_G)
+        rrs[i] = 0;
+      // If its a remote reference, just send it
+      else if(tab & PTE_REMOTE)
+        rrs[i] = tab;
+      // If its a zero page, just send RR_REMOTE
+      else if(PGADDR(tab) == PTE_ZERO)
+        rrs[i] = (tab & RR_RW) | RR_REMOTE;
+      // Otherwise its a user-space pte that needs to be transferred
+      else {
+        pageinfo *p = mem_phys2pi(PGADDR(tab));
+        if(p->home == 0)    // This is our comps page
+          rrs[i] = RRCONS(net_node, PGADDR(tab), tab & RR_RW);
+        else
+          rrs[i] = p->home; // Send back remote ref
+      }
     }
     data = rrs; // Send RRs instead of original page.
   }
@@ -561,8 +536,6 @@ net_rxpullrp(net_pullrphdr *rp, int len)
   assert(rp->type == NET_PULLRP);
 
   spinlock_acquire(&net_lock);
-
-
   // Find the process waiting for this pull reply, if any.
   proc *p, **pp;
   int part = rp->part;
@@ -594,8 +567,6 @@ net_rxpullrp(net_pullrphdr *rp, int len)
   }
 
   // Fill in the appropriate part of the page.
-  cprintf("rxpullrp (part %d): filling in from %p to %p (size %d)\n", 
-    rp->part+1, rp->data, p->pullpg + NET_PULLPART*part, datalen);
   memcpy(p->pullpg + NET_PULLPART*part, rp->data, datalen);
   p->arrived |= 1 << rp->part;  // Mark this part arrived.
   if (p->arrived == 7)          // All three parts arrived?
@@ -620,16 +591,16 @@ net_rxpullrp(net_pullrphdr *rp, int len)
   // Done - what else does this proc need to pull before it can run?
   // Remove/disable this code if the VM system supports pull-on-demand.
   while (p->pullva < VM_USERHI) {
+
     // Pull or traverse PDE to find page table.
     uint32_t *pde = &p->pdir[PDX(p->pullva)];
     if (*pde & PTE_REMOTE) {  // Need to pull remote ptab?
+      // cprintf("rxpullrp: pulling remote page %p (addr %p)\n", pde, p->pullva);
       if (!net_pullpte(p, pde, PGLEV_PTAB))
         return; // Wait for the pull to complete.
-      cprintf("rxpullrp: looked up remote pde %p (addr %p)\n", pde, p->pullva);
     }
     assert(!(*pde & PTE_REMOTE));
     if (PGADDR(*pde) == PTE_ZERO) {   // Skip empty PDEs
-      cprintf("rxpullrp: pde is pte_zero\n");
       p->pullva = PTADDR(p->pullva + PTSIZE);
       continue;
     }
@@ -641,19 +612,12 @@ net_rxpullrp(net_pullrphdr *rp, int len)
     if (*pte & PTE_REMOTE) {  // Need to pull remote page?
       if (!net_pullpte(p, pte, PGLEV_PAGE))
         return; // Wait for the pull to complete.
-      cprintf("rxpullrp: looked up remote pte %p (addr %p)\n", pde, p->pullva);
     }
     assert(!(*pte & PTE_REMOTE));
     assert(PGADDR(*pte) != 0);
     p->pullva += PAGESIZE;  // Page is local - move to next.
   }
-  cprintf("Pulled entire address space for %p...on to proc ready.\n", p);
-  if(spinlock_holding(&p->lock)) {
-    cprintf("rxpullrp: holding %p lock at end\n", p);
-    spinlock_release(&p->lock);
-  } else {
-    cprintf("rxpullrp: not holding %p lock at end\n", p);
-  }
+
   // We've pulled the proc's entire address space: it's ready to go!
   //cprintf("net_rxpullrp: migration complete\n");
   proc_ready(p);
@@ -662,6 +626,7 @@ net_rxpullrp(net_pullrphdr *rp, int len)
 // See if we need to pull a page to fill a given PDE or PTE.
 // Returns false if we started a pull and need to wait until it's finished,
 // or true if we were able to resolve the RR immediately.
+
 bool
 net_pullpte(proc *p, uint32_t *pte, int pglevel)
 {
@@ -670,33 +635,39 @@ net_pullpte(proc *p, uint32_t *pte, int pglevel)
 
   // Zero except for permissions, just return PTE_ZERO
   if(RRADDR(rr) == 0) {
-    *pte = PTE_ZERO;
+    *pte = PTE_ZERO | (rr & RR_RW);
+    if(rr & SYS_READ) 
+      *pte |= PTE_P | PTE_U;  // If read-write perms, make it readabble
     return 1;
   }
 
   if(RRNODE(rr) == net_node) {
+    pageinfo *pi = mem_phys2pi(RRADDR(rr));
+    assert(pi);
+    mem_incref(pi);
     *pte = RRADDR(rr) | (rr & RR_RW);
+    if(rr & SYS_READ || pglevel > 0)      // Same as before, but if it's not a page
+      *pte |= PTE_P | PTE_U;
     return 1;
   }
     
   // reuse pages we already have
   pageinfo *pi = mem_rrlookup(rr);
   if(pi != NULL) {
-    cprintf("\n\npullpte: we looked up page %p\n\n\n", mem_pi2ptr(pi));
-  	*pte = mem_pi2phys(pi) | (rr & RR_RW);
-  	return 1;
+    *pte = mem_pi2phys(pi) | (rr & RR_RW);
+    if(rr & SYS_READ || pglevel > 0)
+      *pte |= PTE_P | PTE_U;
+    return 1;
   }
 
-  // otherwise we have to allocate our own page	
+  // otherwise we have to allocate our own page 
   pi = mem_alloc();
-  if(!pi)
-    panic("pullpte: out of memory!\n");
   mem_incref(pi);
   *pte = mem_pi2phys(pi) | (rr & RR_RW);
-  *pte |= PTE_P | PTE_U; // Make the page exist
+  if(rr & SYS_READ || pglevel > 0)
+      *pte |= PTE_P | PTE_U;
   mem_rrtrack(rr, pi);
+  pi->shared = (RRNODE(rr)%2)+1;
   net_pull(p, rr, mem_pi2ptr(pi), pglevel);
   return 0;
-
 }
-
