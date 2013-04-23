@@ -177,6 +177,7 @@ trap_print(trapframe *tf)
 void gcc_noreturn
 trap(trapframe *tf)
 {
+
   extern uint8_t e100_irq;
   int e100_irq_gate = T_IRQ0 + (int)e100_irq;
 	// The user-level environment may have set the DF flag,
@@ -191,6 +192,11 @@ trap(trapframe *tf)
 	// If this trap was anticipated, just use the designated handler.
 	cpu *c = cpu_cur();
   proc *curr = proc_cur();
+
+    // This is not this processe's home
+  // cprintf("trap (%s -- %d) in %p (home %d)\n", 
+  //   trap_name(tf->trapno), tf->trapno, curr, RRNODE(curr->home));
+
 	if (c->recover)
 		c->recover(tf, c->recoverdata);
 
@@ -226,13 +232,7 @@ trap(trapframe *tf)
       lapic_eoi();
       trap_return(tf);
   }
-  
-  
-  
-  
-  // This is not this processe's home
-  cprintf("trap (%s) in %p (home %d)\n", 
-    trap_name(tf->trapno), curr, RRNODE(curr->home));
+
   // USER MODE trap, reflect to parent
   if(tf->cs & 3) {
     // If we're on the right node, return here.

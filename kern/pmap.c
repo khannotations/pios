@@ -391,7 +391,7 @@ pmap_pagefault(trapframe *tf)
 
   // one of the tests tries to page fault outside of user space
   if(fva < VM_USERLO || fva >= VM_USERHI)
-          return;
+    return;
   proc *curr = proc_cur();
   pte_t *entry = pmap_walk(curr->pdir, fva, 1);
   // The page must be nominally writable

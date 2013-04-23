@@ -18,8 +18,6 @@
 #include <kern/file.h>
 #include <kern/net.h>
 
-
-
 proc proc_null;		// null process - just leave it initialized to 0
 
 proc *proc_root;	// root process, once it's created in init()
@@ -44,8 +42,10 @@ proc *
 proc_alloc(proc *p, uint32_t cn)
 {
   pageinfo *pi = mem_alloc();
-	if (!pi)
+	if (!pi) {
+    warn("proc_alloc: no memory for new process\n");
 		return NULL;
+  }
 	mem_incref(pi);
 
 	proc *cp = (proc*)mem_pi2ptr(pi);

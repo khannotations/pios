@@ -98,7 +98,8 @@ mem_init(void)
 pageinfo *
 mem_alloc(void)
 {
-  spinlock_acquire(&_freelist_lock);
+  if(!spinlock_holding(&_freelist_lock));
+    spinlock_acquire(&_freelist_lock);
 	pageinfo *p = mem_freelist;
 	if(p != NULL)
 		mem_freelist = p->free_next;	// Remove page from free list

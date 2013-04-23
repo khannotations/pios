@@ -121,12 +121,11 @@ do_put(trapframe *tf, uint32_t cmd)
   // When migrating, make sure to adjust eip! => entry == 0
   // Trying to migrate home and this is not its home
   if(node_number == 0) {
-    if(RRNODE(curr->home) != net_node) {
-      cprintf("sys_put: %p returning home to %d\n", curr, RRNODE(curr->home));
-      net_migrate(tf, RRNODE(curr->home), 0);
-    }
-  } else if (net_node != node_number) {
+    node_number = RRNODE(curr->home);
+  }
+  if (net_node != node_number) {
     cprintf("sys_put: %p migrating to %d\n", curr, RRNODE(curr->home));
+    spinlock_release(&curr->lock);
     net_migrate(tf, node_number, 0);
   }
 
@@ -196,12 +195,11 @@ do_get(trapframe *tf, uint32_t cmd)
   // When migrating, make sure to adjust eip! => entry == 0
   // Trying to migrate home and this is not its home
   if(node_number == 0) {
-    if(RRNODE(curr->home) != net_node) {
-      cprintf("sys_get: %p returning home to %d\n", curr, RRNODE(curr->home));
-      net_migrate(tf, RRNODE(curr->home), 0);
-    }
-  } else if (net_node != node_number) {
+    node_number = RRNODE(curr->home);
+  } 
+  if (net_node != node_number) {
     cprintf("sys_get: %p migrating to %d\n", curr, node_number);
+    spinlock_release(&curr->lock);
     net_migrate(tf, node_number, 0);
   }
 
@@ -251,6 +249,7 @@ do_ret(trapframe *tf, uint32_t cmd) {
   // This is not this node's home
   if(RRNODE(curr->home) != net_node) {
     cprintf("sys_ret: %p returning home to %d\n", curr, RRNODE(curr->home));
+    spinlock_release(&curr->lock);
     net_migrate(tf, RRNODE(curr->home), 0);
   }
   proc_ret(tf, 1);
