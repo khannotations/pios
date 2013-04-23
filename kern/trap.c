@@ -237,7 +237,9 @@ trap(trapframe *tf)
   if(tf->cs & 3) {
     // If we're on the right node, return here.
     if(RRNODE(curr->home) != net_node) {
-        net_migrate(tf, RRNODE(curr->home), -1);
+      cprintf("trap on wrong node...%p returning to parent %d\n", 
+        curr, RRNODE(curr->home));
+      net_migrate(tf, RRNODE(curr->home), -1);
     }
     proc_ret(tf, -1);
   }

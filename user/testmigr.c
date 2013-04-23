@@ -11,21 +11,21 @@
 #include <inc/stdio.h>
 #include <inc/syscall.h>
 
-void migrate(int node)
+void migrate(int node, int time)
 {
-	cprintf("testmigr: migrating to node %d...\n", node);
+	cprintf("testmigr (%d): migrating to node %d...\n", time, node);
 	sys_get(0, (node << 8) | 0, NULL, NULL, NULL, 0);
-	cprintf("testmigr: now on node %d.\n", node);
+	cprintf("testmigr (%d): now on node %d.\n", time, node);
 }
 
 int
 main()
 {
 	// Basic migration test
-	migrate(1);
-	migrate(2);
-	migrate(1);
-	migrate(2);
+	migrate(1, 1);
+	migrate(2, 1);
+	migrate(1, 2);
+	migrate(2, 2);
 
 	printf("testmigr done\n");
 	return 0;
