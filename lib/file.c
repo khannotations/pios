@@ -135,32 +135,38 @@ fileino_write(int ino, off_t ofs, const void *buf, size_t eltsize, size_t count)
 	assert(fileino_isreg(ino));
 	assert(ofs >= 0);
 	assert(eltsize > 0);
-
 	fileinode *fi = &files->fi[ino];
 	assert(fi->size <= FILE_MAXSIZE);
 
 	// Rafi's asserts
 	int bytes_to_write = eltsize * count;
-	// Check that the file isn't getting too big
-	if(ofs + bytes_to_write > FILE_MAXSIZE || ofs > fi->size) {
+	int end = ofs + bytes_to_write;
+	// cprintf("fileino_write: writing %d bytes from %x to %x\n", bytes_to_write, FILEDATA(ino)+ofs, buf);
+	// Check that the file isn't getting too big, or b_t_w wasn't negative / wrapped around
+	if(end < ofs || end > FILE_MAXSIZE) {
 		errno = EFBIG;
+		warn("fileino_write: file ino %d too big, not writing\n", ino);
 		return -1;
 	}
+	// File is growing
+	if(end > fi->size) {
+		// see if it crosses a page boundary
+		int oldsize = ROUNDUP(fi->size, PAGESIZE);
+		int newsize = ROUNDUP(end, PAGESIZE);
+		if(newsize > oldsize) {
+			// cprintf("fileino_write: growing from %d to %d\n", oldsize, newsize);
+			// Set the new page permissions appropriately
+			sys_get(SYS_PERM | SYS_READ | SYS_WRITE, 0, NULL, NULL,
+				FILEDATA(ino) + oldsize, newsize-oldsize);
+		}
+		fi->size = end;
+	}
 
-	void *place = FILEDATA(ino) + ofs;
-	// Manage permissions
-	sys_get(SYS_PERM | SYS_READ | SYS_WRITE, 0, NULL, NULL,
-			ROUNDDOWN(place, PTSIZE), ROUNDUP(bytes_to_write, PTSIZE));
+	// cprintf("fileino_write: copying %d bytes from %x to %x\n", 
+	// 	bytes_to_write, FILEDATA(ino) + ofs, buf);
 	// Copy data over, this time from the buffer into the file.
-	memcpy(place, buf, bytes_to_write);
-	// Set the new filesize if it's bigger
-	if(fi->size < ofs + bytes_to_write)
-		fi->size = ofs + bytes_to_write;
+	memcpy(FILEDATA(ino) + ofs, buf, bytes_to_write);
 	return count;
-
-	// Unused...
-	errno = EINVAL;
-	return -1;
 }
 
 // Return file statistics about a particular inode.

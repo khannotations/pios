@@ -22,7 +22,7 @@
 #define MAXCHR		('~')	// Maximum ASCII value a string may contain
 
 #define MAXLEN		10
-#define BLOCKLEN	2
+#define BLOCKLEN	3
 
 #define hexdig(c)	((c) >= '0' && (c) <= '9' ? (c) - '0' : \
 			 (c) >= 'a' && (c) <= 'f' ? (c) - 'a' + 10 : \
