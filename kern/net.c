@@ -201,7 +201,7 @@ void gcc_noinline
 net_migrate(trapframe *tf, uint8_t dstnode, int entry)
 {
   proc *p = proc_cur();
-  cprintf("net_migrate: saving eip %x for %p\n", tf->eip, p);
+  // cprintf("net_migrate: saving eip %x for %p\n", tf->eip, p);
   proc_save(p, tf, entry);  // save current process's state
 
   assert(dstnode > 0 && dstnode <= NET_MAXNODES && dstnode != net_node);
@@ -355,7 +355,7 @@ void net_rxmigrp(net_migrp *migrp)
   spinlock_release(&net_lock);
   // If we didn't find it, nothing to do...
   if(!p) {
-    cprintf("\n\n\nUnable to find process %p\n\n\n", RRADDR(migrp->home));
+    cprintf("Unable to find process %p\n", RRADDR(migrp->home));
     return;
   }
 
@@ -539,7 +539,6 @@ net_rxpullrp(net_pullrphdr *rp, int len)
   // Find the process waiting for this pull reply, if any.
   proc *p, **pp;
   int part = rp->part;
-  len = partlen[rp->part] + sizeof(*rp);
 
   // cprintf("rxpullrp (part %d): data: %p, len: %d, datalen: %d, rr: %d\n",
   //  rp->part+1, rp->data, len, len - sizeof(*rp), rp->rr);

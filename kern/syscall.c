@@ -249,7 +249,7 @@ do_ret(trapframe *tf, uint32_t cmd) {
   // This is not this node's home
   if(RRNODE(curr->home) != net_node) {
     // cprintf("sys_ret: %p returning home to %d\n", curr, RRNODE(curr->home));
-    spinlock_release(&curr->lock);
+    // spinlock_release(&curr->lock);
     net_migrate(tf, RRNODE(curr->home), 0);
   }
   proc_ret(tf, 1);
