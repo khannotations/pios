@@ -73,13 +73,13 @@ pid_t fork(void)
     // Clear our child state array, since we have no children yet.
     memset(&files->child, 0, sizeof(files->child));
     files->child[0].state = PROC_RESERVED;
-    for (i = 1; i < FILE_INODES; i++)
+    for (i = 1; i < FILE_INODES; i++) {
       if (fileino_alloced(i)) {
         files->fi[i].rino = i;  // 1-to-1 mapping
         files->fi[i].rver = files->fi[i].ver;
         files->fi[i].rlen = files->fi[i].size;
       }
-
+    }
     return 0; // indicate that we're the child.
   }
 
@@ -208,6 +208,7 @@ reconcile(pid_t pid, filestate *cfiles)
       }
       cfi->rino = fileino_create(files, c2p[cfi->dino],
               cfi->de.d_name);
+      // cprintf("reconcile: creating parent inode %d for %d\n", cfi->rino, cino);
       if (cfi->rino <= 0)
         continue; // no free inodes!
     }
@@ -277,6 +278,10 @@ reconcile_inode(pid_t pid, filestate *cfiles, int pino, int cino)
   int rver = cfi->rver;
   int rlen = cfi->rlen;
 
+  // if(pino == 15 || cino == 15)
+  //   cprintf("reconcile_inode: cver: %d, pver: %d, rver: %d\n"
+  //     , cfi->ver, pfi->ver, rver);
+
   // Check some invariants that should hold between
   // the parent's and child's current version numbers and lengths
   // and the reference version number and length stored in the child.
@@ -331,6 +336,7 @@ reconcile_inode(pid_t pid, filestate *cfiles, int pino, int cino)
     pfi->dino = cfi->dino;
     pfi->ver  = cfi->ver;
     strcpy(pfi->de.d_name, cfi->de.d_name);
+    // cprintf("reconcile_inode: ino %d/%d pmode set to %x\n", pino, cino, cfi->mode);
     pfi->mode = cfi->mode;
     pfi->size = cfi->size;
     // Copy physical file from child to parent (we have to copy entire page)

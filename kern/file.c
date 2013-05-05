@@ -50,8 +50,6 @@ filestate *const files = FILES;
 static spinlock file_lock;	// Lock to protect file I/O state
 static size_t file_consout;	// Bytes written to console so far
 
-
-
 void
 file_init(void)
 {

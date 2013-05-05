@@ -88,7 +88,6 @@ int
 main(int argc, char **argv)
 {
 	int i;
-
 	ARGBEGIN{
 	default:
 		usage();

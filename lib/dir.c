@@ -13,7 +13,7 @@
 #include <inc/string.h>
 #include <inc/assert.h>
 #include <inc/dirent.h>
-
+#include <inc/stdio.h>
 
 int
 dir_walk(const char *path, mode_t createmode)
@@ -95,6 +95,7 @@ dir_walk(const char *path, mode_t createmode)
 
 	// Path component not found - see if we should create it
 	if (!createmode || strchr(path, '/') != NULL) {
+		// cprintf("dirwalk: failing at 99\n");
 		errno = ENOENT;
 		return -1;
 	}

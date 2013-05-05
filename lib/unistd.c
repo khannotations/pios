@@ -10,9 +10,11 @@
 
 #include <inc/file.h>
 #include <inc/unistd.h>
+#include <inc/stdio.h>
 #include <inc/dirent.h>
 #include <inc/assert.h>
 #include <inc/stdarg.h>
+#include <inc/errno.h>
 
 int
 creat(const char *path, mode_t mode)

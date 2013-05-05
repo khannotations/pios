@@ -54,7 +54,9 @@ KERN_INITFILES :=	sh \
 			cat \
 			wc \
 			testfs \
-			testvm
+			testvm \
+			pwd \
+			mkdir \
 
 KERN_INITFILES +=	testmigr \
 			pwcrack
