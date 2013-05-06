@@ -46,7 +46,7 @@ That’s pretty good. Now let’s get to appending. Normally, we can echo out to
     echo hi >> out
     cat out # => 'hihi'
 
-We would have added things like standard input, output and error redirection, but most of it was repetitive drudgery--plus we did all that in CS 323 anyway. Most of our efforts were devoted to doing command history, linking and pipe.
+We would have added things like standard input, output and error redirection, but most of it was repetitive drudgery--plus we did all that in CS 323 anyway. Most of our efforts were devoted to doing command history, linking.
 
 ## Command history
 
@@ -69,4 +69,13 @@ Switch back to bash, and press enter: this does `cat hi > out`, which we can ver
 For demonstration purposes, we have programmed the down key to show the entire history -- in practice they would obviously change this to scroll the other way through the previous commands. This is simply a matter of changing `++` to a `--` in `readline.c`.
 If you enter the same command twice, and press down (press enter to return to the shell), you'll see that the history only includes the command once. This only works with consecutive commands. 
 
-## Pipesfds
+## Linking
+
+We implemented symbolic links in pios as a special type of inode. (Still in user space).
+
+We have included a link program that creates link.
+You can do 
+    
+    link linkfile targetfile
+
+And have a symbolic link to targetfile. We implemented symbolic links by storing the path in the inode data, and checking the type of inode mode in `filedesc_open`.
