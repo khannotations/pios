@@ -226,7 +226,7 @@ usage(void)
 int
 main(int argc, char **argv)
 {
-	int r, interactive, echocmds;
+	int r, interactive, echocmds, clear = 0;
 
 	interactive = '?';
 	echocmds = 0;
@@ -257,11 +257,22 @@ main(int argc, char **argv)
 
 	while (1) {
 		char *buf;
+		if(clear) {
+			clear = 0;
+			int a;
+			for(a=0; a < 40; a++) {
+				printf("\n\n");
+			}
+			continue;
+		}
 		buf = readline(interactive ? "$ " : NULL);
 		if (buf == NULL) {
 			if (debug)
 				cprintf("EXITING\n");
 			exit(EXIT_SUCCESS);	// end of file
+		}
+		if (buf[0] == 0) {
+			continue; // Empty line
 		}
 		if (debug)
 			cprintf("LINE: %s\n", buf);
@@ -292,6 +303,7 @@ main(int argc, char **argv)
 			char output[32];
 			int num_paths = 0;
 			int ino = files->cwd;
+			// Trace back paths until root
 			while(ino != FILEINO_ROOTDIR) {
 				paths[num_paths++] = files->fi[ino].de.d_name;
 				if(debug)
@@ -304,6 +316,7 @@ main(int argc, char **argv)
 				continue;
 			}
 			int len = 0;
+			// Print them out in reverse order
 			for(num_paths--; num_paths >= 0; num_paths--) {
 				char *path = paths[num_paths];
 				int plen = strlen(path)+1;
@@ -337,6 +350,9 @@ main(int argc, char **argv)
 
 			}
 			continue;
+		}
+		if (!strcmp(token, "clear")) {
+			clear = 1;
 		}
 		if (debug)
 			cprintf("BEFORE FORK\n");
