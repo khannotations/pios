@@ -69,4 +69,4 @@ Switch back to bash, and press enter: this does `cat hi > out`, which we can ver
 For demonstration purposes, we have programmed the down key to show the entire history -- in practice they would obviously change this to scroll the other way through the previous commands. This is simply a matter of changing `++` to a `--` in `readline.c`.
 If you enter the same command twice, and press down (press enter to return to the shell), you'll see that the history only includes the command once. This only works with consecutive commands. 
 
-## Pipes
+## Pipesfds
