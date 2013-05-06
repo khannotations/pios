@@ -55,7 +55,6 @@ KERN_INITFILES :=	sh \
 			wc \
 			testfs \
 			testvm \
-			pwd \
 			mkdir \
 
 KERN_INITFILES +=	testmigr \

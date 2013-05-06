@@ -23,7 +23,7 @@
 
 #define BUFSIZ 1024		/* Find the buffer overrun bug! */
 
-int debug = 0;
+int debug = 2;
 
 // gettoken(s, 0) prepares gettoken for subsequent calls and returns 0.
 // gettoken(0, token) parses a shell token from the previously set string,
@@ -53,6 +53,8 @@ runcmd(char* s)
 again:
 	argc = 0;
 	while (1) {
+		char tok;
+		int flags;
 		switch ((c = gettoken(0, &t))) {
 
 		case 'w':	// Add an argument
@@ -81,11 +83,17 @@ again:
 			
 		case '>':	// Output redirection
 			// Grab the filename from the argument list
-			if (gettoken(0, &t) != 'w') {
+			tok = gettoken(0, &t);
+			flags = O_WRONLY | O_CREAT | O_TRUNC;
+			if (tok == '>') {
+				flags = O_WRONLY | O_CREAT | O_APPEND;
+				tok = gettoken(0, &t);
+			}
+			if (tok != 'w') {
 				cprintf("syntax error: > not followed by word\n");
 				exit(EXIT_FAILURE);
 			}
-			if ((fd = open(t, O_WRONLY | O_CREAT | O_TRUNC)) < 0) {
+			if ((fd = open(t, flags)) < 0) {
 				cprintf("open %s for write: %s", t,
 					strerror(errno));
 				exit(EXIT_FAILURE);
