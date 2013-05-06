@@ -65,12 +65,12 @@ readline(const char *prompt)
 					for(k=0; k < hist_index; k++)
 						printf("%d: %s\n", k, history[k]);
 					break;
-				case 67:
-					cprintf("i: %d", hist_index);
-					break;
-				case 68:
-					cprintf("s: %d", start);
-					break;
+				// case 67:
+				// 	cprintf("i: %d", hist_index);
+				// 	break;
+				// case 68:
+				// 	cprintf("s: %d", start);
+				// 	break;
 			}
 			continue;
 		} 
