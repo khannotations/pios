@@ -23,7 +23,7 @@
 
 #define BUFSIZ 1024		/* Find the buffer overrun bug! */
 
-int debug = 2;
+int debug = 0;
 
 // gettoken(s, 0) prepares gettoken for subsequent calls and returns 0.
 // gettoken(0, token) parses a shell token from the previously set string,
