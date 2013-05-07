@@ -83,3 +83,4 @@ And have a symbolic link to targetfile. We implemented symbolic links by storing
     echo linked > out
     link linked_out out
     cat linked_out # => "linked"
+    ls -l # => note 'l' by linked_out
