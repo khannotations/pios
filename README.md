@@ -58,7 +58,7 @@ Our command history is a step above bash because bash keeps all history (not jus
     type e, then press up 
 
 Pressing up with `e` typed will skip the previous cats and go on to the echos
-(you should see `echo hi >> out`, and if you press up again should see echo hi > outt)
+(you should see `echo hi >> out`, and if you press up again should see `echo hi > outt`)
 
 You may notice that there are two t’s at the end of out in the bash console --  that’s a byproduct of bash not properly handling the \b character. If you look at the x11 console (cmd-tab over to x11 on Mac), however, you can see the history worked properly. 
 
