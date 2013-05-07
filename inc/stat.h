@@ -29,6 +29,7 @@ struct stat {
 
 #define	S_ISREG(m)	(((m) & S_IFMT) == S_IFREG)	/* regular file */
 #define	S_ISDIR(m)	(((m) & S_IFMT) == S_IFDIR)	/* directory */
+#define S_ISSYML(m)  (((m) & 0400000) == S_IFSYML) /* link */
 
 int	stat(const char *path, struct stat *statbuf);
 int	fstat(int fd, struct stat *statbuf);

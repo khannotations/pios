@@ -78,4 +78,8 @@ You can do
     
     link linkfile targetfile
 
-And have a symbolic link to targetfile. We implemented symbolic links by storing the path in the inode data, and checking the type of inode mode in `filedesc_open`.
+And have a symbolic link to targetfile. We implemented symbolic links by storing the path in the inode data, and checking the type of inode mode in `filedesc_open`. To test:
+
+    echo linked > out
+    link linked_out out
+    cat linked_out # => "linked"
