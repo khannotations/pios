@@ -50,6 +50,7 @@ int	creat(const char *path, mode_t mode);		// trad. in fcntl.h
 int	close(int fn);
 ssize_t	read(int fn, void *buf, size_t nbytes);
 ssize_t	write(int fn, const void *buf, size_t nbytes);
+void link(int fn, const char *path);
 off_t	lseek(int fn, off_t offset, int whence);
 int	dup(int oldfn);
 int	dup2(int oldfn, int newfn);

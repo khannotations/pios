@@ -11,6 +11,7 @@
 #include <inc/file.h>
 #include <inc/unistd.h>
 #include <inc/stdio.h>
+#include <inc/string.h>
 #include <inc/dirent.h>
 #include <inc/assert.h>
 #include <inc/stdarg.h>
@@ -46,6 +47,11 @@ close(int fn)
 {
 	filedesc_close(&files->fd[fn]);
 	return 0;
+}
+
+void
+link(int fn, const char *path) {
+    write(fn, path, strlen(path));
 }
 
 ssize_t
@@ -119,8 +125,10 @@ int
 stat(const char *path, struct stat *statbuf)
 {
 	int ino = dir_walk(path, 0);
-	if (ino < 0)
-		return -1;
+	if (ino < 0) {
+		cprintf("%s\n", path);
+        return -1;
+    }
 	return fileino_stat(ino, statbuf);
 }
 

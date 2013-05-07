@@ -25,6 +25,7 @@ struct stat {
 
 #define S_IFPART	0100000		/* partial file: wait on read at end */
 #define S_IFCONF	0200000		/* write/write conflict(s) detected */
+#define S_IFSYML	0400000		/* symlink */
 
 #define	S_ISREG(m)	(((m) & S_IFMT) == S_IFREG)	/* regular file */
 #define	S_ISDIR(m)	(((m) & S_IFMT) == S_IFDIR)	/* directory */

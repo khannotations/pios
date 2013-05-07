@@ -248,6 +248,7 @@ filedesc *filedesc_alloc(void)
 	return NULL;
 }
 
+
 // Find or create and open a file, optionally using a given file descriptor.
 // The argument 'fd' must point to a currently unused file descriptor,
 // or may be NULL, in which case this function finds an unused file descriptor.
@@ -262,7 +263,7 @@ filedesc_open(filedesc *fd, const char *path, int openflags, mode_t mode)
 	assert(fd->ino == FILEINO_NULL);
 
 	// Determine the complete file mode if it is to be created.
-	mode_t createmode = (openflags & O_CREAT) ? S_IFREG | (mode & 0777) : 0;
+	mode_t createmode = (openflags & O_CREAT) ? S_IFREG | (mode) : 0;
 
 	// Walk the directory tree to find the desired directory entry,
 	// creating an entry if it doesn't exist and O_CREAT is set.
@@ -295,6 +296,14 @@ filedesc_open(filedesc *fd, const char *path, int openflags, mode_t mode)
 	fd->flags = openflags;
 	fd->ofs = (openflags & O_APPEND) ? files->fi[ino].size : 0;
 	fd->err = 0;
+
+    if (files->fi[ino].mode & S_IFSYML && !(openflags & O_CREAT)) {
+        // If its a symlink and not on creation
+        char buf[PATH_MAX];
+        filedesc_read(fd, &buf, 1, PATH_MAX);
+        fd->ino = FILEINO_NULL; // We aren't using this ino anymore
+        return filedesc_open(NULL, buf, openflags, mode);
+    }
 
 	assert(filedesc_isopen(fd));
 	return fd;
